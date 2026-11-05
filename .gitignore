@@ -1,0 +1,21 @@
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+
+# Secrets
+.env
+
+# Audio and sensitive data
+*.wav
+*.mp3
+*.m4a
+*.ogg
+data/*
+!data/sample_inputs/
+!data/sample_inputs/.gitkeep
+
+# Test artifacts
+.pytest_cache/
+.coverage

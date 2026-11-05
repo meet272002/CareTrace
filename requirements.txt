@@ -1,0 +1,21 @@
+
+# Frontend
+streamlit
+requests
+
+# Backend API
+fastapi
+uvicorn[standard]
+python-multipart
+backend
+
+# Configuration and validation
+python-dotenv
+pydantic
+
+# Model that we are using for transcription.
+faster-whisper
+
+# Testing
+pytest
+httpx
