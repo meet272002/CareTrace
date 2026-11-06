@@ -33,7 +33,7 @@ def transcribe_audio(audio_file, language):
             f"{API_BASE_URL}/transcribe", 
             files=files, 
             params=params, 
-            timeout=10
+            timeout=600
             )
 
         response.raise_for_status()
