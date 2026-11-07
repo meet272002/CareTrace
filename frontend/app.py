@@ -1,5 +1,13 @@
+
 import streamlit as st
-from app_client import check_backend, transcribe_audio
+
+# Use the filename that actually exists in your frontend folder.
+from app_client import (
+    check_backend,
+    transcribe_audio,
+    get_patient_records
+)
+
 
 st.set_page_config(
     page_title="CareTrace: Voice Enabled Personal Health Timeline Generation",
@@ -7,95 +15,165 @@ st.set_page_config(
     layout="centered",
 )
 
-st.title("🩺 CareTrace: Voice Enabled Personal Health Timeline Generation")
+PATIENT_ID = "001"
 
+# Fetch existing patient records whenever the app loads
+records_response = get_patient_records(PATIENT_ID)
+
+if records_response.get("status") == "success":
+    st.session_state["health_records"] = records_response.get(
+        "records", []
+    )
+else:
+    st.session_state["health_records"] = []
+
+st.title("🩺 CareTrace: Voice Enabled Personal Health Timeline Generation")
 st.subheader("A personal health timeline generation tool.")
 
 st.write("""
-CareTrace is a web application that allows users to generate a personal 
-health timeline by transcribing audio recordings in Hindi and Gujarati.
-The application uses a FastAPI backend to handle audio file uploads and transcriptions, 
-and a Streamlit frontend to provide a user-friendly interface for interacting with the backend services.
+CareTrace is a web application that helps users organize their
+health experiences by transcribing audio recordings in Hindi
+and Gujarati and extracting relevant health information.
 """)
 
 st.info(
-    "CareTrace is a health-information organization tool."
+    "CareTrace is a health-information organization tool. "
     "It does not provide medical diagnosis or treatment advice."
 )
+
+# --------------------------------------------------
+# Sidebar: Backend health check
+# --------------------------------------------------
 
 with st.sidebar:
     st.header("Backend Health Check")
 
     if st.button("Check Backend Health"):
         backend_status = check_backend()
+
         if backend_status.get("status") == "healthy":
             st.success("Backend is healthy and running.")
         else:
-            st.error(f"Backend is unavailable. Error: {backend_status.get('message')}")
+            st.error(
+                f"Backend is unavailable: "
+                f"{backend_status.get('message', 'Unknown error')}"
+            )
 
     st.divider()
+    st.caption(
+        "CareTrace Prototype v1.0.0 | "
+        "Developed by Meet Gandhi and team | 2026"
+    )
 
-    st.caption("CareTrace Prototype v1.0.0 | Developed by Meet Gandhi and team | 2026")
 
-st.header("1. Select the language.")
+# Display saved health history
+st.header("1. Your Health History")
+
+if st.session_state.get("record_saved"):
+    st.success("Your new health record has been saved successfully!")
+    st.session_state["record_saved"] = False
+
+health_records = st.session_state.get("health_records", [])
+
+if health_records:
+
+    st.write(f"Total health records: {len(health_records)}")
+
+    for record in health_records:
+
+        timestamp = record.get("created_at", "Date unavailable")
+
+        with st.expander(f"Health Record #{record['id']} | {timestamp}"):
+
+            st.markdown("**Original Transcript**")
+            st.write(record["original_transcript"])
+
+            st.markdown("**English Translation**")
+            st.write(record["english_transcript"])
+
+else:
+    st.info("No health records found. Your health experiences will appear here.")
+
+st.divider()
+
+# Audio recording section
+st.header("2. Record Your Health Experience")
+
 language_options = {
     "Hindi": "hi",
     "Gujarati": "gu"
 }
 
 selected_language = st.selectbox(
-    "Choose the language for transcription:",
-    options=list(language_options.keys()),
+    "Choose your language:",
+    options=list(language_options.keys())
 )
 
 language_code = language_options[selected_language]
 
-st.header("2. Record Your Health Experience.")
-st.write("Please record your health experience in the selected language.")
+st.write("Record your health experience in the selected language.")
 
-audio_file = st.audio_input("Record your audio here:")
-uploaded_audio = st.file_uploader("Or upload an audio file (WAV, MP3, etc.):", type=["wav", "mp3", "m4a"])
+audio_file = st.audio_input("Record your audio:")
 
-selected_audio = audio_file if audio_file is not None else uploaded_audio
+uploaded_audio = st.file_uploader(
+    "Or upload an audio file:",
+    type=["wav", "mp3", "m4a"]
+)
+
+selected_audio = (
+    audio_file if audio_file is not None else uploaded_audio
+)
 
 if selected_audio is not None:
     st.audio(selected_audio)
-    st.success("Audio is ready for transcription")
 
-st.header("3. Transcribe Audio.")
+# Transcription and automatic database storage
+st.header("3. Save Your Health Experience")
 
 if st.button(
-    "Transcribe Audio",
+    "Process and Save",
     type="primary",
-    disabled = selected_audio is None,
+    disabled=selected_audio is None
 ):
-    with st.spinner(f"Sending audio for transcription for the selected language {selected_language}..."):
-        result = transcribe_audio(audio_file = selected_audio, language = language_code)
+
+    with st.spinner(
+        "Transcribing, translating and saving your health experience..."
+    ):
+
+        result = transcribe_audio(
+            audio_file=selected_audio,
+            language=language_code
+        )
 
     if result.get("status") == "error":
-        st.error("Unable to process the audio. Please try again later.")
-        st.write(result.get("message","unknown error occured"))
-    elif result.get("status") == "not_implemented":
-        st.warning("Transcription functionality is currently under development.")
-        st.write(result.get("message","unknown error occured"))
-    else:
-        transcript = result.get("transcript", "")
 
-        if transcript:
-            st.session_state["transcript"] = transcript
-            st.success("Transcription completed successfully.")
+        st.error("Unable to process your audio.")
+        st.write(result.get("message", "Unknown error"))
+
+    elif result.get("status") == "success":
+
+        # Fetch updated records after successful database insertion
+        updated_records = get_patient_records("001")
+
+        if updated_records.get("status") == "success":
+
+            st.session_state["health_records"] = (
+                updated_records.get("records", [])
+            )
+
+            st.session_state["record_saved"] = True
+
+            # Refresh the page to display the newly saved record
+            st.rerun()
+
         else:
-            st.warning("Transcription returned an empty result. Please try again.")
+            st.warning(
+                "Your record was processed, but the updated "
+                "health history could not be retrieved."
+            )
+            st.write(updated_records.get("message", "Unknown error"))
 
-if "transcript" in st.session_state:
-    st.header("4. Transcription Result.")
-    edited_transcript = st.text_area(
-        "You can edit the transcript below if needed:",
-        value=st.session_state["transcript"],
-        height=250
-    )
-
-    st.session_state["transcript"] = edited_transcript
-
-    if st.button("Save Transcript"):
-        st.success("Transcript saved successfully.")
+    else:
+        st.error(
+            result.get("message", "Unexpected response from backend.")
+        )

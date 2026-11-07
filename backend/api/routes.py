@@ -4,6 +4,10 @@ from fastapi import APIRouter, File, HTTPException, UploadFile
 from typing import Literal
 
 from backend.services.transcription import transcribe_audio_file
+from backend.services.translation import translate_to_english
+from backend.services.health_records import save_health_record
+
+PATIENT_ID = "001"
 
 router = APIRouter()
 
@@ -20,14 +24,15 @@ def health_check():
 """
 Created by Meet Gandhi on 24/10/2026 for transcribing audio files in Gujarati and Hindi language. 
 """
+
 @router.post("/transcribe")
 async def transcribe_audio(
     language: Literal["hi", "gu"],
     audio: UploadFile = File(...)
 ):
     """
-    Receive an audio file, transcribe it using
-    the local Whisper model, and return the transcript.
+    Transcribe audio, translate it into English,
+    and save both transcripts for the patient.
     """
 
     if not audio.filename:
@@ -36,9 +41,7 @@ async def transcribe_audio(
             detail="Audio filename is missing."
         )
 
-    # Preserve the uploaded file extension
     suffix = os.path.splitext(audio.filename)[1] or ".wav"
-
     temporary_path = None
 
     try:
@@ -49,22 +52,46 @@ async def transcribe_audio(
         ) as temporary_file:
 
             temporary_path = temporary_file.name
-
             content = await audio.read()
             temporary_file.write(content)
 
-        # Run Whisper transcription
-        transcript = transcribe_audio_file(
+        # Step 1: Transcribe audio
+        original_transcript = transcribe_audio_file(
             audio_path=temporary_path,
             language=language
         )
 
+        if not original_transcript.strip():
+            raise HTTPException(
+                status_code=400,
+                detail="No speech was detected in the audio."
+            )
+
+        # Step 2: Translate transcript into English
+        english_transcript = translate_to_english(
+            transcript=original_transcript,
+            language=language
+        )
+
+        # Step 3: Save both transcripts
+        saved_record = save_health_record(
+            patient_id=PATIENT_ID,
+            original_transcript=original_transcript,
+            english_transcript=english_transcript
+        )
+
         return {
             "status": "success",
-            "language": language,
+            "patient_id": PATIENT_ID,
             "filename": audio.filename,
-            "transcript": transcript
+            "original_transcript": original_transcript,
+            "english_transcript": english_transcript,
+            "record": saved_record,
+            "message": "Health record saved successfully."
         }
+
+    except HTTPException:
+        raise
 
     except ValueError as error:
         raise HTTPException(
@@ -75,10 +102,10 @@ async def transcribe_audio(
     except Exception as error:
         raise HTTPException(
             status_code=500,
-            detail=f"Transcription failed: {str(error)}"
+            detail=f"Unable to process health record: {str(error)}"
         )
 
     finally:
-        # Remove temporary audio file
         if temporary_path and os.path.exists(temporary_path):
             os.remove(temporary_path)
+
