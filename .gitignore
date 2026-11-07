@@ -16,7 +16,6 @@ data/*
 !data/sample_inputs/
 !data/sample_inputs/.gitkeep
 data/caretrace.db
-config/*
 
 # Test artifacts
 .pytest_cache/
