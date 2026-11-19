@@ -1,11 +1,13 @@
 import os
 import tempfile
+import time
 from fastapi import APIRouter, BackgroundTasks, File, HTTPException, UploadFile
 from typing import Literal
 
 from backend.services.transcription import transcribe_audio_file
 from backend.services.translation import translate_to_english
 from backend.services.health_records import save_health_record
+from backend.services.status import MODEL_STATUS
 from backend.services.issues import extract_and_store, mark_processing
 
 PATIENT_ID = "001"
@@ -20,14 +22,18 @@ def health_check():
     return {
         "status": "healthy",
         "service": "CareTrace API",
+        "models": MODEL_STATUS,
     }
 
 """
 Created by Meet Gandhi on 24/10/2026 for transcribing audio files in Gujarati and Hindi language. 
 """
 
+# Plain `def` (not `async def`): FastAPI runs it in a worker thread, so the slow
+# speech/translation work does not freeze the whole server (health checks,
+# progress polling) while it runs.
 @router.post("/transcribe")
-async def transcribe_audio(
+def transcribe_audio(
     background_tasks: BackgroundTasks,
     language: Literal["hi", "gu"],
     audio: UploadFile = File(...)
@@ -54,14 +60,17 @@ async def transcribe_audio(
         ) as temporary_file:
 
             temporary_path = temporary_file.name
-            content = await audio.read()
+            content = audio.file.read()
             temporary_file.write(content)
 
         # Step 1: Transcribe audio
+        started = time.perf_counter()
+        print(f"[transcribe] speech recognition started (model: {MODEL_STATUS['speech']})")
         original_transcript = transcribe_audio_file(
             audio_path=temporary_path,
             language=language
         )
+        print(f"[transcribe] speech recognition done in {time.perf_counter() - started:.1f}s")
 
         if not original_transcript.strip():
             raise HTTPException(
@@ -70,10 +79,13 @@ async def transcribe_audio(
             )
 
         # Step 2: Translate transcript into English
+        started = time.perf_counter()
+        print("[transcribe] translation started")
         english_transcript = translate_to_english(
             transcript=original_transcript,
             language=language
         )
+        print(f"[transcribe] translation done in {time.perf_counter() - started:.1f}s")
 
         # Step 3: Save both transcripts
         saved_record = save_health_record(

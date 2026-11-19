@@ -228,6 +228,16 @@ with st.sidebar:
         st.markdown('<span class="status bad">● Backend offline</span>', unsafe_allow_html=True)
         st.caption(esc(backend_status.get("message", "Unknown error")))
 
+    models = backend_status.get("models", {})
+    if models:
+        for label, key in (("Speech model", "speech"), ("Translator", "translator")):
+            value = str(models.get(key, "unknown"))
+            kind = "ok" if value.startswith("ready") else "bad" if "fail" in value or "not reachable" in value else ""
+            st.markdown(
+                f'<div style="margin:.35rem 0"><span class="status {kind}">{esc(label)}: {esc(value)}</span></div>',
+                unsafe_allow_html=True,
+            )
+
     if st.button("↻ Re-check backend"):
         st.rerun()
 

@@ -3,6 +3,7 @@ import threading
 from functools import lru_cache
 from faster_whisper import WhisperModel
 
+from backend.services.status import MODEL_STATUS
 from config.settings import (
     WHISPER_MODEL,
     WHISPER_DEVICE,
@@ -178,12 +179,22 @@ def transcribe_audio_file(
 
 def load_whisper_model():
     with _load_lock:  # a request arriving mid-warm-up waits instead of loading twice
-        return _load_whisper_model_cached()
+        MODEL_STATUS["speech"] = f"loading Whisper ({MODEL_SIZE})"
+        model = _load_whisper_model_cached()
+        MODEL_STATUS["speech"] = f"ready: Whisper ({MODEL_SIZE})"
+        return model
 
 
 def load_indic_conformer():
     with _load_lock:
-        return _load_indic_conformer_cached()
+        MODEL_STATUS["speech"] = "loading IndicConformer"
+        try:
+            model = _load_indic_conformer_cached()
+        except Exception:
+            MODEL_STATUS["speech"] = "IndicConformer failed"
+            raise
+        MODEL_STATUS["speech"] = "ready: IndicConformer"
+        return model
 
 
 def preload_models() -> None:
