@@ -8,6 +8,7 @@ from backend.services.transcription import transcribe_audio_file
 from backend.services.translation import translate_to_english
 from backend.services.health_records import save_health_record
 from backend.services.status import MODEL_STATUS
+from config.settings import LLM_BACKEND
 from backend.services.issues import extract_and_store, mark_processing
 
 PATIENT_ID = "001"
@@ -23,6 +24,7 @@ def health_check():
         "status": "healthy",
         "service": "CareTrace API",
         "models": MODEL_STATUS,
+        "llm_backend": LLM_BACKEND,
     }
 
 """
