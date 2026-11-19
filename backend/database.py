@@ -58,3 +58,59 @@ def create_health_records_table():
 
     finally:
         connection.close()
+
+
+def create_health_issues_tables():
+    """
+    Create tables that store information extracted from translated records.
+
+    record_extractions: one row per record (status of the extraction run)
+    health_issues:      one row per symptom/issue found in a record
+    """
+
+    connection = get_db_connection()
+
+    try:
+        connection.execute("""
+            CREATE TABLE IF NOT EXISTS record_extractions (
+                record_id INTEGER PRIMARY KEY,
+                patient_id TEXT NOT NULL,
+                status TEXT NOT NULL,               -- 'success' or 'failed'
+                error TEXT,
+                additional_context TEXT NOT NULL DEFAULT '[]',   -- JSON list
+                missing_information TEXT NOT NULL DEFAULT '[]',  -- JSON list
+                extracted_at TEXT NOT NULL DEFAULT (
+                    strftime('%Y-%m-%dT%H:%M:%f', 'now', 'localtime')
+                ),
+                FOREIGN KEY (record_id) REFERENCES health_records(id)
+                    ON DELETE CASCADE
+            )
+        """)
+
+        connection.execute("""
+            CREATE TABLE IF NOT EXISTS health_issues (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                record_id INTEGER NOT NULL,
+                patient_id TEXT NOT NULL,
+                name TEXT NOT NULL,
+                status TEXT NOT NULL,               -- present / absent / unclear
+                onset TEXT,
+                duration TEXT,
+                severity TEXT,
+                pattern TEXT,
+                evidence TEXT NOT NULL,
+                evidence_verified INTEGER NOT NULL DEFAULT 0,
+                FOREIGN KEY (record_id) REFERENCES health_records(id)
+                    ON DELETE CASCADE
+            )
+        """)
+
+        connection.execute(
+            "CREATE INDEX IF NOT EXISTS idx_issues_patient "
+            "ON health_issues(patient_id)"
+        )
+
+        connection.commit()
+
+    finally:
+        connection.close()
