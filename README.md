@@ -324,6 +324,9 @@ The FastAPI backend currently exposes the following endpoints.
 | POST | `/api/v1/transcribe` | Transcribe, translate, and save an audio recording |
 | POST | `/api/v1/records` | Save a health record directly |
 | GET | `/api/v1/records/{patient_id}` | Retrieve a patient's health records |
+| GET | `/api/v1/issues/{patient_id}` | Issues (symptom, onset, duration, severity, pattern, evidence) extracted from the translated records |
+| POST | `/api/v1/issues/extract/{record_id}` | (Re-)run extraction for one record |
+| POST | `/api/v1/issues/{patient_id}/extract-pending` | Extract for all records not yet analysed |
 
 ### Audio Transcription API
 
@@ -556,7 +559,14 @@ Potential future improvements include:
 Whisper is weak on Gujarati, so CareTrace now uses AI4Bharat IndicConformer by default and falls back to Whisper if it cannot load.
 
 1. Open https://huggingface.co/ai4bharat/indic-conformer-600m-multilingual, log in and accept the terms.
-2. `pip install -r requirements.txt` then `huggingface-cli login` (paste a read token).
+2. `pip install -r requirements.txt` then `hf auth login` (paste a read token).
 3. Restart the backend. The first request downloads the model.
 
 Switches (environment variables): `ASR_BACKEND=whisper` to force Whisper, `INDIC_DECODER=rnnt` for the alternate decoder, `OLLAMA_MODEL=qwen2.5:7b` for a stronger translator (`ollama pull qwen2.5:7b`).
+
+
+## Health issue extraction
+
+After each recording is transcribed and translated, the English text is analysed (Ollama, JSON-schema constrained) and the issues are stored in `health_issues` / `record_extractions`. Each issue keeps what the patient said about **when** it started, how long it lasted, severity and pattern, plus the exact supporting phrase. If a phrase is not found in the transcript the issue is flagged for review. The record is always saved even if extraction fails; use **Analyse pending records** in the *Health Issues* tab to retry.
+
+The UI has three tabs: **Record**, **Translated Records** (original + English) and **Health Issues**.

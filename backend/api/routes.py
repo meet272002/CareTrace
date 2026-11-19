@@ -6,6 +6,7 @@ from typing import Literal
 from backend.services.transcription import transcribe_audio_file
 from backend.services.translation import translate_to_english
 from backend.services.health_records import save_health_record
+from backend.services.issues import extract_and_store
 
 PATIENT_ID = "001"
 
@@ -80,8 +81,16 @@ async def transcribe_audio(
             english_transcript=english_transcript
         )
 
+        # Step 4: Extract issues (best effort - the record is already saved)
+        extraction_result = extract_and_store(
+            record_id=saved_record["id"],
+            patient_id=PATIENT_ID,
+            english_transcript=english_transcript
+        )
+
         return {
             "status": "success",
+            "extraction": extraction_result,
             "patient_id": PATIENT_ID,
             "filename": audio.filename,
             "original_transcript": original_transcript,

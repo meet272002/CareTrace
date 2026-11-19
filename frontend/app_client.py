@@ -65,3 +65,42 @@ def transcribe_audio(audio_file, language):
             "status": "error", 
             "message": str(e)
             }
+
+def get_patient_issues(patient_id="001"):
+    """
+    Retrieve issues extracted from a patient's translated records.
+    """
+
+    try:
+        response = requests.get(
+            f"{API_BASE_URL}/issues/{patient_id}",
+            timeout=30
+        )
+        response.raise_for_status()
+        return response.json()
+
+    except requests.RequestException as error:
+        return {
+            "status": "error",
+            "message": str(error),
+            "issues": [],
+            "extractions": {},
+            "pending_records": 0
+        }
+
+
+def extract_pending_issues(patient_id="001"):
+    """
+    Run extraction for records that have no successful extraction yet.
+    """
+
+    try:
+        response = requests.post(
+            f"{API_BASE_URL}/issues/{patient_id}/extract-pending",
+            timeout=900
+        )
+        response.raise_for_status()
+        return response.json()
+
+    except requests.RequestException as error:
+        return {"status": "error", "message": str(error)}

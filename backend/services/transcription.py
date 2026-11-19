@@ -1,4 +1,5 @@
 
+import threading
 from functools import lru_cache
 from faster_whisper import WhisperModel
 
@@ -30,8 +31,11 @@ SUPPORTED_LANGUAGES = {
 # LOAD WHISPER MODEL
 # ==========================================
 
+_load_lock = threading.RLock()
+
+
 @lru_cache(maxsize=1)
-def load_whisper_model():
+def _load_whisper_model_cached():
     """
     Load the Whisper model once and reuse it
     for subsequent transcription requests.
@@ -104,7 +108,7 @@ def _transcribe_whisper(
 # ==========================================
 
 @lru_cache(maxsize=1)
-def load_indic_conformer():
+def _load_indic_conformer_cached():
     """
     Load IndicConformer once. The model on Hugging Face is gated:
     accept its terms on the model page and run `huggingface-cli login` once.
@@ -166,3 +170,31 @@ def transcribe_audio_file(
             )
 
     return _transcribe_whisper(audio_path, language)
+
+
+# ==========================================
+# WARM-UP (load models at server start)
+# ==========================================
+
+def load_whisper_model():
+    with _load_lock:  # a request arriving mid-warm-up waits instead of loading twice
+        return _load_whisper_model_cached()
+
+
+def load_indic_conformer():
+    with _load_lock:
+        return _load_indic_conformer_cached()
+
+
+def preload_models() -> None:
+    """Load the speech model now so the first request is fast."""
+    try:
+        if ASR_BACKEND == "indic_conformer":
+            try:
+                load_indic_conformer()
+                return
+            except Exception as error:  # noqa: BLE001
+                print(f"[WARNING] IndicConformer preload failed ({error!r}); loading Whisper.")
+        load_whisper_model()
+    except Exception as error:  # noqa: BLE001
+        print(f"[WARNING] Model preload failed: {error!r}")

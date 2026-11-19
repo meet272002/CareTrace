@@ -155,3 +155,15 @@ Return only the English translation.
         raise RuntimeError(
             f"Invalid translation response: {error}"
         ) from error
+
+
+def preload_translation_model() -> None:
+    """Ask Ollama to load the model into memory and keep it there."""
+    try:
+        requests.post(
+            f"{OLLAMA_BASE_URL}/api/generate",
+            json={"model": OLLAMA_MODEL, "keep_alive": "30m"},
+            timeout=OLLAMA_TIMEOUT,
+        )
+    except requests.RequestException as error:
+        print(f"[WARNING] Ollama preload skipped: {error}")

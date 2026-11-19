@@ -6,6 +6,8 @@ from app_client import (
     check_backend,
     transcribe_audio,
     get_patient_records,
+    get_patient_issues,
+    extract_pending_issues,
 )
 
 
@@ -156,6 +158,31 @@ section[data-testid="stSidebar"] { background: rgba(14,14,34,.85); border-right:
     margin: 0 0 1.4rem; padding: .85rem 1.1rem; border-radius: 14px; font-size: .88rem; color: #FFE9A8;
     background: rgba(255,200,60,.08); border: 1px solid rgba(255,200,60,.3);
 }
+
+/* tabs */
+button[data-baseweb="tab"] { font-weight: 700; font-size: 1rem; padding: .7rem 1.2rem; }
+div[data-baseweb="tab-list"] { gap: .4rem; border-bottom: 1px solid rgba(255,255,255,.1); }
+
+/* issue cards */
+.issues { display: grid; grid-template-columns: repeat(auto-fill, minmax(320px, 1fr)); gap: 1rem; }
+.issue {
+    padding: 1.1rem 1.3rem; border-radius: 20px; background: rgba(255,255,255,.055);
+    border: 1px solid rgba(255,255,255,.1); border-left: 5px solid #FF40A0;
+    transition: transform .25s, box-shadow .25s; animation: rise .5s ease both;
+}
+.issue:hover { transform: translateY(-5px); box-shadow: 0 14px 40px rgba(255,64,160,.25); }
+.issue.unclear { border-left-color: #FFC83C; } .issue.absent { border-left-color: #5CFFC8; opacity: .9; }
+.issue .top { display: flex; justify-content: space-between; align-items: center; gap: .5rem; }
+.issue .nm { font-size: 1.2rem; font-weight: 700; color: #fff; text-transform: capitalize; }
+.chip { font-size: .7rem; font-weight: 700; padding: .15rem .6rem; border-radius: 999px; text-transform: uppercase; letter-spacing: .06em; }
+.chip.present { background: rgba(255,64,160,.18); color: #FF8AC8; border: 1px solid rgba(255,64,160,.4); }
+.chip.unclear { background: rgba(255,200,60,.15); color: #FFD97A; border: 1px solid rgba(255,200,60,.4); }
+.chip.absent  { background: rgba(0,255,170,.12); color: #5CFFC8; border: 1px solid rgba(0,255,170,.35); }
+.facts { display: grid; grid-template-columns: auto 1fr; gap: .25rem .8rem; margin: .8rem 0 .6rem; font-size: .88rem; }
+.facts .k { color: #A9A9D6; } .facts .v { color: #fff; font-weight: 600; }
+.quote { font-size: .82rem; color: #C9C9F0; border-left: 3px solid rgba(255,255,255,.2); padding-left: .7rem; font-style: italic; }
+.warn { font-size: .72rem; color: #FFD97A; margin-top: .4rem; }
+.meta { font-size: .72rem; color: #8F8FC0; margin-top: .6rem; }
 </style>
 """
 
@@ -179,6 +206,11 @@ else:
     st.session_state["health_records"] = []
 
 health_records = st.session_state.get("health_records", [])
+
+issues_response = get_patient_issues(PATIENT_ID)
+all_issues = issues_response.get("issues", [])
+active_issues = [i for i in all_issues if i["status"] != "absent"]
+absent_issues = [i for i in all_issues if i["status"] == "absent"]
 
 
 # --------------------------------------------------
@@ -238,7 +270,7 @@ st.markdown(
     f"""
 <div class="stats">
   <div class="stat"><div class="n">{len(health_records)}</div><div class="l">Records saved</div></div>
-  <div class="stat"><div class="n">2</div><div class="l">Languages</div></div>
+  <div class="stat"><div class="n">{len(active_issues)}</div><div class="l">Issues found</div></div>
   <div class="stat"><div class="n" style="font-size:1.35rem;padding:.45rem 0">{esc(health_records[-1].get('created_at', '—')) if health_records else '—'}</div><div class="l">Latest entry</div></div>
 </div>
 """,
@@ -247,21 +279,97 @@ st.markdown(
 
 
 # --------------------------------------------------
-# 1. Health history timeline
+# Tabs
 # --------------------------------------------------
 
-st.markdown('<div class="sec"><span class="pill">🕒</span>Your Health Timeline</div>', unsafe_allow_html=True)
-
 if st.session_state.get("record_saved"):
+    summary = st.session_state.pop("last_extraction", None) or {}
     st.success("✨ Your new health record has been saved successfully!")
+    if summary.get("status") == "success":
+        st.info(f"🩺 Found {summary.get('issue_count', 0)} health item(s). See the **Health Issues** tab.")
+    elif summary.get("status") == "failed":
+        st.warning(
+            "The record was saved, but issues could not be extracted yet "
+            "(is Ollama running?). Use **Analyse pending records** in the Health Issues tab."
+        )
     st.balloons()
     st.session_state["record_saved"] = False
 
-if health_records:
-    cards = []
-    for i, record in enumerate(health_records):
-        cards.append(
-            f"""
+tab_record, tab_translated, tab_issues = st.tabs(
+    ["🎙️ Record", "🌍 Translated Records", "🩺 Health Issues"]
+)
+
+
+# ---------- Tab 1: record ----------
+with tab_record:
+    st.markdown('<div class="sec"><span class="pill">🎙️</span>Record Your Health Experience</div>', unsafe_allow_html=True)
+
+    language_options = {
+        "Hindi (हिन्दी)": "hi",
+        "Gujarati (ગુજરાતી)": "gu",
+    }
+
+    left, right = st.columns([1, 2])
+
+    with left:
+        selected_language = st.selectbox(
+            "Choose your language:",
+            options=list(language_options.keys()),
+        )
+        language_code = language_options[selected_language]
+        st.markdown(
+            '<span class="pulse"></span><small>Ready to listen</small>',
+            unsafe_allow_html=True,
+        )
+
+    with right:
+        audio_file = st.audio_input("Record your audio:")
+        uploaded_audio = st.file_uploader(
+            "Or upload an audio file:",
+            type=["wav", "mp3", "m4a"],
+        )
+
+    selected_audio = audio_file if audio_file is not None else uploaded_audio
+
+    if selected_audio is not None:
+        st.audio(selected_audio)
+
+    st.markdown('<div class="sec"><span class="pill">🚀</span>Save Your Health Experience</div>', unsafe_allow_html=True)
+
+    if st.button(
+        "✨ Process and Save",
+        type="primary",
+        disabled=selected_audio is None,
+    ):
+
+        with st.spinner("Transcribing, translating, extracting and saving your health experience..."):
+            result = transcribe_audio(
+                audio_file=selected_audio,
+                language=language_code,
+            )
+
+        if result.get("status") == "error":
+            st.error("Unable to process your audio.")
+            st.write(result.get("message", "Unknown error"))
+
+        elif result.get("status") == "success":
+            st.session_state["record_saved"] = True
+            st.session_state["last_extraction"] = result.get("extraction", {})
+            st.rerun()
+
+        else:
+            st.error(result.get("message", "Unexpected response from backend."))
+
+
+# ---------- Tab 2: translated records ----------
+with tab_translated:
+    st.markdown('<div class="sec"><span class="pill">🌍</span>Translated Records</div>', unsafe_allow_html=True)
+
+    if health_records:
+        cards = []
+        for i, record in enumerate(health_records):
+            cards.append(
+                f"""
 <div class="rec" style="animation-delay:{min(i, 8) * 0.06:.2f}s">
   <div class="head">
     <span class="id">Health Record #{esc(record.get('id'))}</span>
@@ -272,88 +380,86 @@ if health_records:
     <div class="col e"><div class="lab">English translation</div><div class="txt">{esc(record.get('english_transcript'))}</div></div>
   </div>
 </div>"""
-        )
-    st.markdown(f'<div class="timeline">{"".join(cards)}</div>', unsafe_allow_html=True)
-else:
-    st.markdown(
-        '<div class="empty">🌱 No health records yet.<br>'
-        'Record your first health experience below and it will appear here.</div>',
-        unsafe_allow_html=True,
-    )
-
-
-# --------------------------------------------------
-# 2. Record
-# --------------------------------------------------
-
-st.markdown('<div class="sec"><span class="pill">🎙️</span>Record Your Health Experience</div>', unsafe_allow_html=True)
-
-language_options = {
-    "Hindi (हिन्दी)": "hi",
-    "Gujarati (ગુજરાતી)": "gu",
-}
-
-left, right = st.columns([1, 2])
-
-with left:
-    selected_language = st.selectbox(
-        "Choose your language:",
-        options=list(language_options.keys()),
-    )
-    language_code = language_options[selected_language]
-    st.markdown(
-        '<span class="pulse"></span><small>Ready to listen</small>',
-        unsafe_allow_html=True,
-    )
-
-with right:
-    audio_file = st.audio_input("Record your audio:")
-    uploaded_audio = st.file_uploader(
-        "Or upload an audio file:",
-        type=["wav", "mp3", "m4a"],
-    )
-
-selected_audio = audio_file if audio_file is not None else uploaded_audio
-
-if selected_audio is not None:
-    st.audio(selected_audio)
-
-
-# --------------------------------------------------
-# 3. Process & save
-# --------------------------------------------------
-
-st.markdown('<div class="sec"><span class="pill">🚀</span>Save Your Health Experience</div>', unsafe_allow_html=True)
-
-if st.button(
-    "✨ Process and Save",
-    type="primary",
-    disabled=selected_audio is None,
-):
-
-    with st.spinner("Transcribing, translating and saving your health experience..."):
-        result = transcribe_audio(
-            audio_file=selected_audio,
-            language=language_code,
-        )
-
-    if result.get("status") == "error":
-        st.error("Unable to process your audio.")
-        st.write(result.get("message", "Unknown error"))
-
-    elif result.get("status") == "success":
-        updated_records = get_patient_records(PATIENT_ID)
-
-        if updated_records.get("status") == "success":
-            st.session_state["health_records"] = updated_records.get("records", [])
-            st.session_state["record_saved"] = True
-            st.rerun()
-        else:
-            st.warning(
-                "Your record was processed, but the updated "
-                "health history could not be retrieved."
             )
-            st.write(updated_records.get("message", "Unknown error"))
-
+        st.markdown(f'<div class="timeline">{"".join(cards)}</div>', unsafe_allow_html=True)
     else:
-        st.error(result.get("message", "Unexpected response from backend."))
+        st.markdown(
+            '<div class="empty">🌱 No health records yet.<br>'
+            'Record your first health experience in the Record tab.</div>',
+            unsafe_allow_html=True,
+        )
+
+
+# ---------- Tab 3: extracted health issues ----------
+def issue_card(issue, index):
+    facts = []
+    for label, key in (("Started", "onset"), ("Duration", "duration"),
+                       ("Severity", "severity"), ("Pattern", "pattern")):
+        if issue.get(key):
+            facts.append(f'<span class="k">{label}</span><span class="v">{esc(issue[key])}</span>')
+    if not facts:
+        facts.append('<span class="k">Timing</span><span class="v">not mentioned</span>')
+
+    warn = "" if issue.get("evidence_verified") else (
+        '<div class="warn">⚠️ Supporting phrase not found in the transcript — please review.</div>'
+    )
+    status = esc(issue["status"])
+    return f"""
+<div class="issue {status}" style="animation-delay:{min(index, 8) * 0.05:.2f}s">
+  <div class="top"><span class="nm">{esc(issue['name'])}</span><span class="chip {status}">{status}</span></div>
+  <div class="facts">{''.join(facts)}</div>
+  <div class="quote">“{esc(issue.get('evidence'))}”</div>
+  {warn}
+  <div class="meta">Reported {esc(issue.get('reported_at'))} · Record #{esc(issue.get('record_id'))}</div>
+</div>"""
+
+
+with tab_issues:
+    st.markdown('<div class="sec"><span class="pill">🩺</span>Health Issues Found</div>', unsafe_allow_html=True)
+
+    if issues_response.get("status") == "error":
+        st.error(f"Could not load issues: {issues_response.get('message', 'Unknown error')}")
+
+    pending = issues_response.get("pending_records", 0)
+    if pending:
+        st.warning(f"{pending} record(s) have not been analysed yet.")
+        if st.button("🔎 Analyse pending records"):
+            with st.spinner("Extracting health issues..."):
+                outcome = extract_pending_issues(PATIENT_ID)
+            if outcome.get("status") == "success":
+                st.rerun()
+            else:
+                st.error(outcome.get("message", "Extraction failed."))
+
+    if active_issues:
+        st.markdown(
+            f'<div class="issues">{"".join(issue_card(i, n) for n, i in enumerate(active_issues))}</div>',
+            unsafe_allow_html=True,
+        )
+    elif not pending:
+        st.markdown(
+            '<div class="empty">🩺 No health issues extracted yet.<br>'
+            'They appear here after you save a recording.</div>',
+            unsafe_allow_html=True,
+        )
+
+    if absent_issues:
+        with st.expander(f"Reported as not present ({len(absent_issues)})"):
+            st.markdown(
+                f'<div class="issues">{"".join(issue_card(i, n) for n, i in enumerate(absent_issues))}</div>',
+                unsafe_allow_html=True,
+            )
+
+    notes = []
+    for rid, info in issues_response.get("extractions", {}).items():
+        for item in info.get("missing_information", []):
+            notes.append(f"Record #{rid}: {item}")
+    if notes:
+        with st.expander("Information not mentioned (could be useful to add)"):
+            for n in notes:
+                st.write("• " + n)
+
+    st.caption(
+        "Extracted automatically from the English translation. "
+        "This is not a diagnosis. Please review before sharing with a doctor."
+    )
