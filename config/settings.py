@@ -23,3 +23,8 @@ INDIC_CONFORMER_MODEL = os.getenv(
     "INDIC_CONFORMER_MODEL", "ai4bharat/indic-conformer-600m-multilingual"
 )
 INDIC_DECODER = os.getenv("INDIC_DECODER", "ctc")  # "ctc" (faster) or "rnnt" (often more accurate)
+
+# True: the backend only starts accepting requests after the speech and
+# translation models are loaded (slower start, instant first request).
+# False: start immediately and load models in the background.
+PRELOAD_BLOCKING = os.getenv("PRELOAD_BLOCKING", "1") == "1"

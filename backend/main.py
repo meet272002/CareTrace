@@ -27,13 +27,26 @@ def initialize_database():
 
 @app.on_event("startup")
 def warm_up_models():
-    """Load speech + translation models in the background so the API
-    starts immediately and the first user request does not wait."""
+    """Load the speech and translation models when the backend starts.
+
+    With PRELOAD_BLOCKING (default) the server accepts requests only once both
+    are loaded, so the first recording is as fast as any other."""
     from backend.services.transcription import preload_models
     from backend.services.translation import preload_translation_model
+    from config.settings import PRELOAD_BLOCKING
 
-    for task in (preload_models, preload_translation_model):
-        threading.Thread(target=task, daemon=True).start()
+    threads = [
+        threading.Thread(target=task, daemon=True)
+        for task in (preload_models, preload_translation_model)
+    ]
+    for thread in threads:  # both load in parallel
+        thread.start()
+
+    if PRELOAD_BLOCKING:
+        print("Loading models... the backend will be ready when this finishes.")
+        for thread in threads:
+            thread.join()
+        print("Models loaded. CareTrace backend is ready.")
 
 @app.get("/")
 def root():

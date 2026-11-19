@@ -228,6 +228,16 @@ with st.sidebar:
         st.markdown('<span class="status bad">● Backend offline</span>', unsafe_allow_html=True)
         st.caption(esc(backend_status.get("message", "Unknown error")))
 
+    models = backend_status.get("models", {})
+    if models:
+        for label, key in (("Speech model", "speech"), ("Translator", "translator")):
+            value = str(models.get(key, "unknown"))
+            kind = "ok" if value.startswith("ready") else "bad" if "fail" in value or "not reachable" in value else ""
+            st.markdown(
+                f'<div style="margin:.35rem 0"><span class="status {kind}">{esc(label)}: {esc(value)}</span></div>',
+                unsafe_allow_html=True,
+            )
+
     if st.button("↻ Re-check backend"):
         st.rerun()
 
@@ -285,7 +295,9 @@ st.markdown(
 if st.session_state.get("record_saved"):
     summary = st.session_state.pop("last_extraction", None) or {}
     st.success("✨ Your new health record has been saved successfully!")
-    if summary.get("status") == "success":
+    if summary.get("status") == "processing":
+        st.info("🩺 Analysing your health issues in the background. Open the **Health Issues** tab to watch them appear.")
+    elif summary.get("status") == "success":
         st.info(f"🩺 Found {summary.get('issue_count', 0)} health item(s). See the **Health Issues** tab.")
     elif summary.get("status") == "failed":
         st.warning(
@@ -414,13 +426,25 @@ def issue_card(issue, index):
 </div>"""
 
 
-with tab_issues:
-    st.markdown('<div class="sec"><span class="pill">🩺</span>Health Issues Found</div>', unsafe_allow_html=True)
+def render_issues_panel(initial_processing: int):
+    """Issues list. Re-runs every few seconds while extraction is running."""
+    data = get_patient_issues(PATIENT_ID)
+    processing = data.get("processing", 0)
 
-    if issues_response.get("status") == "error":
-        st.error(f"Could not load issues: {issues_response.get('message', 'Unknown error')}")
+    # finished since the page was drawn -> redraw everything (stats, counts)
+    if initial_processing and not processing:
+        st.rerun()
 
-    pending = issues_response.get("pending_records", 0)
+    if data.get("status") == "error":
+        st.error(f"Could not load issues: {data.get('message', 'Unknown error')}")
+
+    if processing:
+        st.markdown(
+            f'<div class="status ok"><span class="pulse"></span>Analysing {processing} record(s)... this can take a minute</div>',
+            unsafe_allow_html=True,
+        )
+
+    pending = data.get("pending_records", 0)
     if pending:
         st.warning(f"{pending} record(s) have not been analysed yet.")
         if st.button("🔎 Analyse pending records"):
@@ -431,31 +455,37 @@ with tab_issues:
             else:
                 st.error(outcome.get("message", "Extraction failed."))
 
-    if active_issues:
+    issues = data.get("issues", [])
+    active = [i for i in issues if i["status"] != "absent"]
+    absent = [i for i in issues if i["status"] == "absent"]
+
+    if active:
         st.markdown(
-            f'<div class="issues">{"".join(issue_card(i, n) for n, i in enumerate(active_issues))}</div>',
+            f'<div class="issues">{"".join(issue_card(i, n) for n, i in enumerate(active))}</div>',
             unsafe_allow_html=True,
         )
-    elif not pending:
+    elif not pending and not processing:
         st.markdown(
             '<div class="empty">🩺 No health issues extracted yet.<br>'
             'They appear here after you save a recording.</div>',
             unsafe_allow_html=True,
         )
 
-    if absent_issues:
-        with st.expander(f"Reported as not present ({len(absent_issues)})"):
+    if absent:
+        with st.expander(f"Reported as not present ({len(absent)})"):
             st.markdown(
-                f'<div class="issues">{"".join(issue_card(i, n) for n, i in enumerate(absent_issues))}</div>',
+                f'<div class="issues">{"".join(issue_card(i, n) for n, i in enumerate(absent))}</div>',
                 unsafe_allow_html=True,
             )
 
     notes = []
-    for rid, info in issues_response.get("extractions", {}).items():
+    for rid, info in data.get("extractions", {}).items():
+        if info.get("status") == "failed":
+            notes.append(f"Record #{rid}: extraction failed ({info.get('error', 'unknown error')})")
         for item in info.get("missing_information", []):
             notes.append(f"Record #{rid}: {item}")
     if notes:
-        with st.expander("Information not mentioned (could be useful to add)"):
+        with st.expander("Notes and information not mentioned"):
             for n in notes:
                 st.write("• " + n)
 
@@ -463,3 +493,10 @@ with tab_issues:
         "Extracted automatically from the English translation. "
         "This is not a diagnosis. Please review before sharing with a doctor."
     )
+
+
+with tab_issues:
+    st.markdown('<div class="sec"><span class="pill">🩺</span>Health Issues Found</div>', unsafe_allow_html=True)
+    initial_processing = issues_response.get("processing", 0)
+    # poll only while something is being analysed
+    st.fragment(run_every=3 if initial_processing else None)(render_issues_panel)(initial_processing)

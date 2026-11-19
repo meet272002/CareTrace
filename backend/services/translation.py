@@ -159,11 +159,15 @@ Return only the English translation.
 
 def preload_translation_model() -> None:
     """Ask Ollama to load the model into memory and keep it there."""
+    from backend.services.status import MODEL_STATUS
+    MODEL_STATUS["translator"] = f"loading {OLLAMA_MODEL}"
     try:
         requests.post(
             f"{OLLAMA_BASE_URL}/api/generate",
             json={"model": OLLAMA_MODEL, "keep_alive": "30m"},
             timeout=OLLAMA_TIMEOUT,
         )
+        MODEL_STATUS["translator"] = f"ready: {OLLAMA_MODEL}"
     except requests.RequestException as error:
+        MODEL_STATUS["translator"] = "Ollama not reachable"
         print(f"[WARNING] Ollama preload skipped: {error}")
