@@ -3,7 +3,9 @@ import os
 # ---------------- Translation (Ollama) ----------------
 OLLAMA_BASE_URL = "http://localhost:11434"
 OLLAMA_MODEL = os.getenv("OLLAMA_MODEL", "qwen2.5:3b")  # try "qwen2.5:7b" for better Gujarati->English
-OLLAMA_TIMEOUT = 300
+OLLAMA_TIMEOUT = int(os.getenv("OLLAMA_TIMEOUT", "300"))            # translation, seconds
+OLLAMA_EXTRACT_TIMEOUT = int(os.getenv("OLLAMA_EXTRACT_TIMEOUT", "900"))  # issue extraction (runs in background)
+OLLAMA_NUM_CTX = int(os.getenv("OLLAMA_NUM_CTX", "3072"))          # smaller context = faster on CPU
 
 # ---------------- Speech recognition (faster-whisper) ----------------
 # Latest Whisper: "large-v3-turbo" (needs faster-whisper >= 1.1.0).

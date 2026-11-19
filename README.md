@@ -190,6 +190,9 @@ When `LLM_BACKEND=huggingface`, the backend uses the token from the `HF_TOKEN` e
 | `HF_MODEL` | `Qwen/Qwen3-32B` | Hosted chat model; can pin a provider, e.g. `openai/gpt-oss-120b:groq` |
 | `HF_TIMEOUT` | `120` | Seconds to wait for Hugging Face |
 | `OLLAMA_MODEL` | `qwen2.5:3b` | Local model (try `qwen2.5:7b` for quality) |
+| `OLLAMA_TIMEOUT` | `300` | Seconds to wait for a translation |
+| `OLLAMA_EXTRACT_TIMEOUT` | `900` | Seconds to wait for issue extraction (runs in the background) |
+| `OLLAMA_NUM_CTX` | `3072` | Context size; smaller is faster on CPU |
 | `ASR_BACKEND` | `indic_conformer` | Set `whisper` to force Whisper |
 | `INDIC_DECODER` | `ctc` | `rnnt` is the alternate decoder |
 | `WHISPER_MODEL` | `large-v3-turbo` | e.g. `small` for a faster, lighter Whisper |
@@ -329,7 +332,7 @@ python -c "import requests; from config.settings import HF_TOKEN; r=requests.pos
 
 **Extraction failed: `401` / `403` / `404` / `429`** - bad or missing token, token without Inference Providers permission, model not available (set another `HF_MODEL`), or rate limiting. The Health Issues tab shows the reason.
 
-**Extraction failed: "Ollama ... timed out"** - the local model is too slow on CPU for extraction. Use Hugging Face (with credits) or a smaller/faster setup.
+**Extraction failed: "Ollama ... timed out"** - the local model is slow on CPU. Extraction already uses a short prompt, a small output and a 15-minute timeout; raise `OLLAMA_EXTRACT_TIMEOUT` further, check `ollama ps` that the model is loaded (and on GPU if you have one), or use a faster machine/Hugging Face (with credits).
 
 **`huggingface-cli` is deprecated** - use `hf auth login`.
 

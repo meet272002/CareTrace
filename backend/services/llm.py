@@ -16,6 +16,7 @@ from config.settings import (
     LLM_BACKEND,
     OLLAMA_BASE_URL,
     OLLAMA_MODEL,
+    OLLAMA_NUM_CTX,
     OLLAMA_TIMEOUT,
 )
 
@@ -93,7 +94,7 @@ def _chat_hf(system: str, user: str, schema: Optional[dict], max_tokens: int) ->
 
 
 # ---------------------------------------------------------------------- Ollama
-def _chat_ollama(system: str, user: str, schema: Optional[dict], max_tokens: int) -> str:
+def _chat_ollama(system: str, user: str, schema: Optional[dict], max_tokens: int, timeout: Optional[int] = None) -> str:
     payload = {
         "model": OLLAMA_MODEL,
         "messages": [
@@ -102,17 +103,17 @@ def _chat_ollama(system: str, user: str, schema: Optional[dict], max_tokens: int
         ],
         "stream": False,
         "keep_alive": "30m",
-        "options": {"temperature": 0, "num_predict": max_tokens},
+        "options": {"temperature": 0, "num_predict": max_tokens, "num_ctx": OLLAMA_NUM_CTX},
     }
     if schema is not None:
         payload["format"] = schema
-    response = requests.post(f"{OLLAMA_BASE_URL}/api/chat", json=payload, timeout=OLLAMA_TIMEOUT)
+    response = requests.post(f"{OLLAMA_BASE_URL}/api/chat", json=payload, timeout=timeout or OLLAMA_TIMEOUT)
     response.raise_for_status()
     return _clean(response.json()["message"]["content"])
 
 
 # ----------------------------------------------------------------- Public API
-def chat(system: str, user: str, *, schema: Optional[dict] = None, max_tokens: int = 900) -> str:
+def chat(system: str, user: str, *, schema: Optional[dict] = None, max_tokens: int = 900, timeout: Optional[int] = None) -> str:
     """Send one system+user prompt to the configured model; return its text.
 
     Raises RuntimeError with a readable message on any failure.
@@ -120,7 +121,7 @@ def chat(system: str, user: str, *, schema: Optional[dict] = None, max_tokens: i
     try:
         if LLM_BACKEND == "huggingface":
             return _chat_hf(system, user, schema, max_tokens)
-        return _chat_ollama(system, user, schema, max_tokens)
+        return _chat_ollama(system, user, schema, max_tokens, timeout)
 
     except requests.ConnectionError as error:
         target = "Hugging Face" if LLM_BACKEND == "huggingface" else "Ollama. Make sure Ollama is running"

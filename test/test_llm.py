@@ -65,3 +65,24 @@ def test_missing_token_and_http_errors_are_readable(monkeypatch):
     monkeypatch.setattr(llm.requests, "post", lambda *a, **k: Resp(402))
     with pytest.raises(RuntimeError, match="credits"):
         translation.translate_to_english("x", "gu")
+
+
+def test_extraction_is_slim_and_uses_long_timeout(monkeypatch):
+    seen = {}
+
+    def fake_chat(system, user, **kw):
+        seen.update(system=system, kw=kw)
+        return GOOD_LITE
+
+    monkeypatch.setattr(extraction, "chat", fake_chat)
+    result = extraction.extract_health_information("I have a fever", "en")
+
+    assert result.language == "en" and result.symptoms[0].name == "fever"
+    props = seen["kw"]["schema"]["properties"]
+    assert "additional_context" not in props and "language" not in props
+    assert seen["kw"]["timeout"] == extraction.OLLAMA_EXTRACT_TIMEOUT >= 600
+    assert len(seen["system"].split()) < 180  # short prompt
+
+
+GOOD_LITE = json.dumps({"symptoms": [
+    {"name": "fever", "status": "present", "evidence": "I have a fever"}]})
