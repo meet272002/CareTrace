@@ -1,77 +1,32 @@
+from typing import List
 
-import requests
+from pydantic import BaseModel, Field
 
-from backend.schemas.health import HealthExtractionResponse
-from config.settings import (
-    OLLAMA_BASE_URL,
-    OLLAMA_MODEL,
-    OLLAMA_TIMEOUT,
-)
+from backend.schemas.health import HealthExtractionResponse, Symptom
+from backend.services.llm import chat
+from config.settings import OLLAMA_EXTRACT_TIMEOUT
 
-SYSTEM_PROMPT = """
-You are a careful health-information extraction system.
+# Short prompt: on CPU every prompt and output token costs time.
+SYSTEM_PROMPT = """Extract health issues from an English patient statement as JSON.
 
-Your task is to extract structured information from
-English patient-reported health statements.
-
-IMPORTANT RULES:
-
-1. Extract only information explicitly stated by the patient.
-2. Never diagnose or recommend treatment.
-3. Never invent symptoms, dates, durations, or severity.
-4. Identify every distinct symptom separately.
-5. Never combine different symptoms into a generic symptom.
-6. Use concise normalized English symptom names.
-
-SYMPTOM IDENTIFICATION:
-
-- headache means headache.
-- stomach pain means stomach pain.
-- cough means cough.
-- fever means fever.
-- Do not replace one symptom with another.
-- Do not merge multiple symptoms into a single entry.
-
-NEGATION:
-
-- "I do not have a fever" means fever is absent.
-- "I have a fever" means fever is present.
-- Distinguish absent symptoms from present symptoms.
-
-TEMPORAL INFORMATION:
-
-- "since yesterday" should be extracted as onset.
-- "for two days" should be extracted as duration.
-- Preserve the stated time expression.
-- Do not invent calendar dates.
-- Associate temporal information with the correct symptom.
-
-SYMPTOM PATTERNS:
-
-- "The pain was less in the morning and increased
-  in the evening" describes one symptom.
-- Record this change in the pattern field.
-- Do not create duplicate symptoms for different times.
-- Do not put explicitly stated patterns in missing_information.
-
-SEVERITY:
-
-- Extract severity only when explicitly mentioned.
-- Do not infer severity from the symptom name.
-
-EVIDENCE:
-
-- Every symptom must include the exact English
-  phrase from the input that supports its extraction.
-- Never create evidence that does not exist in the input.
-
-MISSING INFORMATION:
-
-- Include only useful information that is genuinely missing.
-- Do not ask about information already provided.
-
-Return valid JSON matching the supplied schema.
+Rules:
+- Use only what the patient says. Never diagnose or invent anything.
+- One entry per distinct symptom, with a short normalized name (e.g. "headache").
+- status: "present", or "absent" when negated ("I do not have a fever"), else "unclear".
+- onset = when it started ("since yesterday"); duration = how long ("two days");
+  pattern = how it changes (e.g. "less in the morning, worse in the evening");
+  severity only if stated. Leave other fields out. No calendar dates.
+- evidence = the exact words from the statement that support the entry.
+- missing_information = at most 3 short useful details not stated (or empty).
 """
+
+
+class _LiteExtraction(BaseModel):
+    """Smaller output than HealthExtractionResponse: fewer tokens to generate."""
+
+    symptoms: List[Symptom] = Field(default_factory=list)
+    missing_information: List[str] = Field(default_factory=list)
+
 
 def extract_health_information(
     transcript: str,
@@ -84,78 +39,21 @@ def extract_health_information(
     if language not in ["hi", "gu", "en"]:
         raise ValueError("Language must be 'hi' or 'gu' or 'en'.")
 
-    user_prompt = f"""
-        Extract health information from the following transcript.
-
-        Transcript language: {language}
-
-        Transcript:
-        <transcript>
-        {transcript}
-        </transcript>
-
-        Remember:
-        - Do not assume missing information.
-        - Preserve the original evidence.
-        - Return only information supported by the transcript.
-    """
+    content = chat(
+        SYSTEM_PROMPT,
+        f"Statement:\n{transcript.strip()}",
+        schema=_LiteExtraction.model_json_schema(),
+        max_tokens=700,
+        timeout=OLLAMA_EXTRACT_TIMEOUT,
+    )
 
     try:
-        response = requests.post(
-            f"{OLLAMA_BASE_URL}/api/chat",
-            json={
-                "model": OLLAMA_MODEL,
-                "messages": [
-                    {
-                        "role": "system",
-                        "content": SYSTEM_PROMPT,
-                    },
-                    {
-                        "role": "user",
-                        "content": user_prompt,
-                    },
-                ],
-                "format": HealthExtractionResponse.model_json_schema(),
-                "stream": False,
-                "options": {
-                    "temperature": 0,
-                    # stop runaway generation with the constrained JSON schema
-                    "num_predict": 900,
-                },
-                "keep_alive": "30m",
-            },
-            timeout=OLLAMA_TIMEOUT,
-        )
+        lite = _LiteExtraction.model_validate_json(content)
+    except ValueError as error:
+        raise RuntimeError(f"Invalid extraction response from the model: {error}") from error
 
-        response.raise_for_status()
-
-        result = response.json()
-
-        extracted_json = result["message"]["content"]
-
-        validated_result = HealthExtractionResponse.model_validate_json(
-            extracted_json
-        )
-
-        return validated_result
-
-    except requests.ConnectionError as error:
-        raise RuntimeError(
-            "Cannot connect to Ollama. "
-            "Make sure Ollama is running."
-        ) from error
-
-    except requests.Timeout as error:
-        raise RuntimeError(
-            "Ollama extraction timed out."
-        ) from error
-
-    except requests.RequestException as error:
-        raise RuntimeError(
-            f"Ollama API request failed: {error}"
-        ) from error
-
-    except (KeyError, ValueError) as error:
-        raise RuntimeError(
-            f"Invalid response from Ollama: {error}"
-        ) from error
+    return HealthExtractionResponse(
+        language=language,
+        symptoms=lite.symptoms,
+        missing_information=lite.missing_information,
+    )

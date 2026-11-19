@@ -3,7 +3,9 @@ import os
 # ---------------- Translation (Ollama) ----------------
 OLLAMA_BASE_URL = "http://localhost:11434"
 OLLAMA_MODEL = os.getenv("OLLAMA_MODEL", "qwen2.5:3b")  # try "qwen2.5:7b" for better Gujarati->English
-OLLAMA_TIMEOUT = 300
+OLLAMA_TIMEOUT = int(os.getenv("OLLAMA_TIMEOUT", "300"))            # translation, seconds
+OLLAMA_EXTRACT_TIMEOUT = int(os.getenv("OLLAMA_EXTRACT_TIMEOUT", "900"))  # issue extraction (runs in background)
+OLLAMA_NUM_CTX = int(os.getenv("OLLAMA_NUM_CTX", "3072"))          # smaller context = faster on CPU
 
 # ---------------- Speech recognition (faster-whisper) ----------------
 # Latest Whisper: "large-v3-turbo" (needs faster-whisper >= 1.1.0).
@@ -28,3 +30,27 @@ INDIC_DECODER = os.getenv("INDIC_DECODER", "ctc")  # "ctc" (faster) or "rnnt" (o
 # translation models are loaded (slower start, instant first request).
 # False: start immediately and load models in the background.
 PRELOAD_BLOCKING = os.getenv("PRELOAD_BLOCKING", "1") == "1"
+
+# ---------------- Language model for translation + issue extraction ----------------
+# "huggingface": hosted Inference Providers (needs HF_TOKEN; text leaves your machine)
+# "ollama":      local Ollama (private, needs a running Ollama)
+# Default: ollama (free, local). Opt in to Hugging Face with LLM_BACKEND=huggingface
+# (needs paid Inference Providers credits).
+def _find_hf_token() -> str:
+    """HF_TOKEN env var, else the token saved by `hf auth login`."""
+    token = os.getenv("HF_TOKEN", "")
+    if token:
+        return token
+    try:
+        from huggingface_hub import get_token
+        return get_token() or ""
+    except Exception:  # noqa: BLE001
+        return ""
+
+
+HF_TOKEN = _find_hf_token()
+LLM_BACKEND = os.getenv("LLM_BACKEND", "ollama").strip().lower() or "ollama"
+HF_BASE_URL = os.getenv("HF_BASE_URL", "https://router.huggingface.co/v1")
+# Any chat model served by Inference Providers; optionally add a provider, e.g. "...:groq"
+HF_MODEL = os.getenv("HF_MODEL", "Qwen/Qwen3-32B")
+HF_TIMEOUT = int(os.getenv("HF_TIMEOUT", "120"))
