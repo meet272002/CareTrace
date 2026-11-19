@@ -2,6 +2,7 @@ import os
 import tempfile
 from fastapi import APIRouter, File, HTTPException, UploadFile
 from typing import Literal
+import traceback
 
 from backend.services.transcription import transcribe_audio_file
 from backend.services.translation import translate_to_english
@@ -109,6 +110,10 @@ async def transcribe_audio(
         )
 
     except Exception as error:
+        print("\n========== TRANSCRIPTION ERROR ==========")
+        traceback.print_exc()
+        print("==========================================\n")
+
         raise HTTPException(
             status_code=500,
             detail=f"Unable to process health record: {str(error)}"
