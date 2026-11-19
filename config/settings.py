@@ -2,7 +2,7 @@ import os
 
 # ---------------- Translation (Ollama) ----------------
 OLLAMA_BASE_URL = "http://localhost:11434"
-OLLAMA_MODEL = "qwen2.5:3b"
+OLLAMA_MODEL = os.getenv("OLLAMA_MODEL", "qwen2.5:3b")  # try "qwen2.5:7b" for better Gujarati->English
 OLLAMA_TIMEOUT = 300
 
 # ---------------- Speech recognition (faster-whisper) ----------------
@@ -14,3 +14,12 @@ OLLAMA_TIMEOUT = 300
 WHISPER_MODEL = os.getenv("WHISPER_MODEL", "large-v3-turbo")
 WHISPER_DEVICE = os.getenv("WHISPER_DEVICE", "cpu")          # "cpu" or "cuda"
 WHISPER_COMPUTE_TYPE = os.getenv("WHISPER_COMPUTE_TYPE", "int8")  # "float16" on GPU
+
+# ---------------- ASR backend ----------------
+# "indic_conformer": AI4Bharat IndicConformer 600M (best for Hindi/Gujarati, MIT licence)
+# "whisper":         faster-whisper (settings above)
+ASR_BACKEND = os.getenv("ASR_BACKEND", "indic_conformer")
+INDIC_CONFORMER_MODEL = os.getenv(
+    "INDIC_CONFORMER_MODEL", "ai4bharat/indic-conformer-600m-multilingual"
+)
+INDIC_DECODER = os.getenv("INDIC_DECODER", "ctc")  # "ctc" (faster) or "rnnt" (often more accurate)
