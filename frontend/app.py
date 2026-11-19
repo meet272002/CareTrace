@@ -253,6 +253,10 @@ with st.sidebar:
 # Hero
 # --------------------------------------------------
 
+_hosted = backend_status.get("llm_backend") == "huggingface"
+PRIVACY_BADGE = "☁️ Text sent to Hugging Face" if _hosted else "🔒 Runs locally"
+LLM_LABEL = "Hugging Face LLM" if _hosted else "Local LLM"
+
 st.markdown(
     """
 <div class="hero">
@@ -261,7 +265,7 @@ st.markdown(
      translates it to English and builds a personal health timeline you can bring to your doctor.</p>
   <span class="badge">🎙️ Voice first</span>
   <span class="badge">🌐 हिन्दी · ગુજરાતી</span>
-  <span class="badge">🔒 Runs locally</span>
+  <span class="badge">__PRIVACY_BADGE__</span>
 </div>
 <div class="disclaimer">
   ⚠️ CareTrace is a health-information organization tool. It does not provide medical diagnosis or treatment advice.
@@ -269,10 +273,10 @@ st.markdown(
 <div class="pipeline">
   <div class="step"><div class="ico">🎙️</div><div class="t">1 · Record</div><div class="d">Speak or upload audio</div></div>
   <div class="step"><div class="ico">📝</div><div class="t">2 · Transcribe</div><div class="d">Whisper speech-to-text</div></div>
-  <div class="step"><div class="ico">🌍</div><div class="t">3 · Translate</div><div class="d">Local LLM → English</div></div>
+  <div class="step"><div class="ico">🌍</div><div class="t">3 · Translate</div><div class="d">__LLM_LABEL__ → English</div></div>
   <div class="step"><div class="ico">🗂️</div><div class="t">4 · Save</div><div class="d">Added to your timeline</div></div>
 </div>
-""",
+""".replace("__PRIVACY_BADGE__", PRIVACY_BADGE).replace("__LLM_LABEL__", LLM_LABEL),
     unsafe_allow_html=True,
 )
 

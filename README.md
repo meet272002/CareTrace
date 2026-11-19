@@ -570,3 +570,16 @@ Switches (environment variables): `ASR_BACKEND=whisper` to force Whisper, `INDIC
 After each recording is transcribed and translated, the English text is analysed (Ollama, JSON-schema constrained) and the issues are stored in `health_issues` / `record_extractions`. Each issue keeps what the patient said about **when** it started, how long it lasted, severity and pattern, plus the exact supporting phrase. If a phrase is not found in the transcript the issue is flagged for review. The record is always saved even if extraction fails; use **Analyse pending records** in the *Health Issues* tab to retry.
 
 The UI has three tabs: **Record**, **Translated Records** (original + English) and **Health Issues**.
+
+
+## Using Hugging Face instead of local Ollama
+
+Translation and issue extraction can run on Hugging Face Inference Providers (no local LLM needed):
+
+1. Create a token at https://huggingface.co/settings/tokens (enable permission to make calls to Inference Providers).
+2. Set it before starting the backend (PowerShell): `$env:HF_TOKEN="hf_..."` - never commit the token.
+3. Start the backend. With `HF_TOKEN` set it uses Hugging Face automatically; set `LLM_BACKEND=ollama` to go back to local Ollama.
+
+Optional: `HF_MODEL` (default `Qwen/Qwen3-32B`; you can pin a provider, e.g. `openai/gpt-oss-120b:groq`) and `HF_TIMEOUT`.
+
+**Privacy:** with Hugging Face the patient's *transcribed text* (not the audio) is sent to a third-party service. Speech recognition still runs on your machine. Use Ollama for fully local processing. Usage may count against your Hugging Face credits/quota.

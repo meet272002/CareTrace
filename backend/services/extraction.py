@@ -1,12 +1,6 @@
 
-import requests
-
 from backend.schemas.health import HealthExtractionResponse
-from config.settings import (
-    OLLAMA_BASE_URL,
-    OLLAMA_MODEL,
-    OLLAMA_TIMEOUT,
-)
+from backend.services.llm import chat
 
 SYSTEM_PROMPT = """
 You are a careful health-information extraction system.
@@ -100,62 +94,14 @@ def extract_health_information(
         - Return only information supported by the transcript.
     """
 
+    content = chat(
+        SYSTEM_PROMPT,
+        user_prompt,
+        schema=HealthExtractionResponse.model_json_schema(),
+        max_tokens=900,
+    )
+
     try:
-        response = requests.post(
-            f"{OLLAMA_BASE_URL}/api/chat",
-            json={
-                "model": OLLAMA_MODEL,
-                "messages": [
-                    {
-                        "role": "system",
-                        "content": SYSTEM_PROMPT,
-                    },
-                    {
-                        "role": "user",
-                        "content": user_prompt,
-                    },
-                ],
-                "format": HealthExtractionResponse.model_json_schema(),
-                "stream": False,
-                "options": {
-                    "temperature": 0,
-                    # stop runaway generation with the constrained JSON schema
-                    "num_predict": 900,
-                },
-                "keep_alive": "30m",
-            },
-            timeout=OLLAMA_TIMEOUT,
-        )
-
-        response.raise_for_status()
-
-        result = response.json()
-
-        extracted_json = result["message"]["content"]
-
-        validated_result = HealthExtractionResponse.model_validate_json(
-            extracted_json
-        )
-
-        return validated_result
-
-    except requests.ConnectionError as error:
-        raise RuntimeError(
-            "Cannot connect to Ollama. "
-            "Make sure Ollama is running."
-        ) from error
-
-    except requests.Timeout as error:
-        raise RuntimeError(
-            "Ollama extraction timed out."
-        ) from error
-
-    except requests.RequestException as error:
-        raise RuntimeError(
-            f"Ollama API request failed: {error}"
-        ) from error
-
-    except (KeyError, ValueError) as error:
-        raise RuntimeError(
-            f"Invalid response from Ollama: {error}"
-        ) from error
+        return HealthExtractionResponse.model_validate_json(content)
+    except ValueError as error:
+        raise RuntimeError(f"Invalid extraction response from the model: {error}") from error
