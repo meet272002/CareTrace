@@ -33,7 +33,19 @@ PRELOAD_BLOCKING = os.getenv("PRELOAD_BLOCKING", "1") == "1"
 # "huggingface": hosted Inference Providers (needs HF_TOKEN; text leaves your machine)
 # "ollama":      local Ollama (private, needs a running Ollama)
 # Default: huggingface if HF_TOKEN is set, otherwise ollama.
-HF_TOKEN = os.getenv("HF_TOKEN", "")
+def _find_hf_token() -> str:
+    """HF_TOKEN env var, else the token saved by `hf auth login`."""
+    token = os.getenv("HF_TOKEN", "")
+    if token:
+        return token
+    try:
+        from huggingface_hub import get_token
+        return get_token() or ""
+    except Exception:  # noqa: BLE001
+        return ""
+
+
+HF_TOKEN = _find_hf_token()
 LLM_BACKEND = os.getenv("LLM_BACKEND") or ("huggingface" if HF_TOKEN else "ollama")
 HF_BASE_URL = os.getenv("HF_BASE_URL", "https://router.huggingface.co/v1")
 # Any chat model served by Inference Providers; optionally add a provider, e.g. "...:groq"

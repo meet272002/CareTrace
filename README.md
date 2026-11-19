@@ -577,7 +577,7 @@ The UI has three tabs: **Record**, **Translated Records** (original + English) a
 Translation and issue extraction can run on Hugging Face Inference Providers (no local LLM needed):
 
 1. Create a token at https://huggingface.co/settings/tokens (enable permission to make calls to Inference Providers).
-2. Set it before starting the backend (PowerShell): `$env:HF_TOKEN="hf_..."` - never commit the token.
+2. Either run `hf auth login` once (the backend reuses that saved token, same one used for IndicConformer) or set it before starting the backend (PowerShell): `$env:HF_TOKEN="hf_..."` - never commit the token.
 3. Start the backend. With `HF_TOKEN` set it uses Hugging Face automatically; set `LLM_BACKEND=ollama` to go back to local Ollama.
 
 Optional: `HF_MODEL` (default `Qwen/Qwen3-32B`; you can pin a provider, e.g. `openai/gpt-oss-120b:groq`) and `HF_TIMEOUT`.
