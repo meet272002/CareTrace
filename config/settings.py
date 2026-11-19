@@ -28,14 +28,3 @@ INDIC_DECODER = os.getenv("INDIC_DECODER", "ctc")  # "ctc" (faster) or "rnnt" (o
 # translation models are loaded (slower start, instant first request).
 # False: start immediately and load models in the background.
 PRELOAD_BLOCKING = os.getenv("PRELOAD_BLOCKING", "1") == "1"
-
-# ---------------- Language model for translation + issue extraction ----------------
-# "huggingface": hosted Inference Providers (needs HF_TOKEN; text leaves your machine)
-# "ollama":      local Ollama (private, needs a running Ollama)
-# Default: huggingface if HF_TOKEN is set, otherwise ollama.
-HF_TOKEN = os.getenv("HF_TOKEN", "")
-LLM_BACKEND = os.getenv("LLM_BACKEND") or ("huggingface" if HF_TOKEN else "ollama")
-HF_BASE_URL = os.getenv("HF_BASE_URL", "https://router.huggingface.co/v1")
-# Any chat model served by Inference Providers; optionally add a provider, e.g. "...:groq"
-HF_MODEL = os.getenv("HF_MODEL", "Qwen/Qwen3-32B")
-HF_TIMEOUT = int(os.getenv("HF_TIMEOUT", "120"))

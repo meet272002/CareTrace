@@ -1,9 +1,7 @@
 
 import requests
 
-from backend.services.llm import chat, describe_backend
 from config.settings import (
-    LLM_BACKEND,
     OLLAMA_BASE_URL,
     OLLAMA_MODEL,
     OLLAMA_TIMEOUT,
@@ -102,23 +100,66 @@ Original statement:
 Return only the English translation.
 """
 
-    translated_text = chat(SYSTEM_PROMPT, user_prompt, max_tokens=600)
+    try:
+        response = requests.post(
+            f"{OLLAMA_BASE_URL}/api/chat",
+            json={
+                "model": OLLAMA_MODEL,
+                "messages": [
+                    {
+                        "role": "system",
+                        "content": SYSTEM_PROMPT,
+                    },
+                    {
+                        "role": "user",
+                        "content": user_prompt,
+                    },
+                ],
+                "stream": False,
+                "options": {
+                    "temperature": 0,
+                },
+            },
+            timeout=OLLAMA_TIMEOUT,
+        )
 
-    if not translated_text:
-        raise RuntimeError("Translation returned an empty response.")
+        response.raise_for_status()
 
-    return translated_text
+        result = response.json()
+
+        translated_text = (
+            result["message"]["content"].strip()
+        )
+
+        if not translated_text:
+            raise ValueError("Translation returned an empty response.")
+
+        return translated_text
+
+    except requests.ConnectionError as error:
+        raise RuntimeError(
+            "Cannot connect to Ollama. Check whether Ollama is running."
+        ) from error
+
+    except requests.Timeout as error:
+        raise RuntimeError(
+            "Ollama translation timed out."
+        ) from error
+
+    except requests.RequestException as error:
+        raise RuntimeError(
+            f"Ollama API request failed: {error}"
+        ) from error
+
+    except (KeyError, ValueError) as error:
+        raise RuntimeError(
+            f"Invalid translation response: {error}"
+        ) from error
 
 
 def preload_translation_model() -> None:
-    """Warm the translator. Hosted models need no loading; Ollama is asked to
-    load its model into memory and keep it there."""
+    """Ask Ollama to load the model into memory and keep it there."""
     from backend.services.status import MODEL_STATUS
-
-    if LLM_BACKEND == "huggingface":
-        MODEL_STATUS["translator"] = f"ready: {describe_backend()}"
-        return
-
     MODEL_STATUS["translator"] = f"loading {OLLAMA_MODEL}"
     try:
         requests.post(
