@@ -21,6 +21,7 @@ The current prototype supports:
 - Translation of transcripts into English.
 - Persistent storage of original and translated transcripts.
 - Retrieval and display of previously stored health records.
+- Automatic extraction of health issues (symptom, when it started, duration, severity, pattern) from the English text, shown in its own tab.
 
 The longer-term objective is to generate chronological health timelines and structured appointment summaries.
 
@@ -50,268 +51,172 @@ CareTrace aims to provide a simple voice-based interface that helps users record
 | Component | Technology |
 |---|---|
 | Programming Language | Python |
-| Frontend | Streamlit |
+| Frontend | Streamlit (3 tabs: Record, Translated Records, Health Issues) |
 | Backend | FastAPI |
-| Speech Recognition | Faster-Whisper |
-| Whisper Model | `large-v3-turbo` (configurable via `WHISPER_MODEL`) |
-| Translation | Ollama |
-| Translation Model | `qwen2.5:3b` |
+| Speech Recognition (default) | AI4Bharat **IndicConformer 600M** (Hindi/Gujarati), via Hugging Face `transformers` |
+| Speech Recognition (fallback) | Faster-Whisper `large-v3-turbo` |
+| Translation + issue extraction | Hugging Face Inference Providers (`Qwen/Qwen3-32B`) **or** local Ollama (`qwen2.5:3b`) - selectable |
 | Database | SQLite |
 | Data Validation | Pydantic |
 | HTTP Communication | Requests |
 | Testing | Pytest |
-| Configuration | Python configuration files |
 
 ### Architecture
 
-CareTrace follows a frontend-backend architecture.
+- **Streamlit:** user interaction, language selection, recording, and the three tabs.
+- **FastAPI:** API requests, audio processing, transcription, translation, extraction, database.
+- **IndicConformer / Faster-Whisper:** speech to text. If IndicConformer cannot load, the backend falls back to Whisper and prints a `[WARNING]`.
+- **Language model (Hugging Face or Ollama):** translates to English and extracts health issues. One shared client (`backend/services/llm.py`) is used for both.
+- **SQLite:** stores records, extracted issues and extraction status.
 
-- **Streamlit:** Handles user interaction, language selection, audio recording, and displaying health records.
-- **FastAPI:** Handles API requests, audio processing, transcription, translation, and database operations.
-- **Faster-Whisper:** Converts Hindi and Gujarati speech into text.
-- **Ollama:** Translates the original transcript into English using a locally running language model.
-- **SQLite:** Stores patient health records persistently.
-
-The frontend communicates with the backend through HTTP APIs. Database access and AI processing are handled by the backend.
+At backend start-up both models are loaded **before** the server accepts requests, so the first recording is as fast as later ones.
 
 ## 5. Current Development Workflow
 
-The implemented prototype currently follows this workflow:
-
-1. **Patient Identification:** The prototype uses a temporary patient ID (`001`).
-2. **Language Selection:** The user selects Hindi or Gujarati.
-3. **Voice Input:** The user records their health experience or uploads an audio file.
-4. **Audio Processing:** The backend receives and temporarily saves the uploaded audio.
-5. **Speech-to-Text:** Faster-Whisper generates the original transcript.
-6. **English Translation:** Ollama translates the transcript into English.
-7. **Database Storage:** Both original and English transcripts are stored in SQLite with the patient ID and timestamp.
-8. **Health History Retrieval:** The backend retrieves existing records associated with the patient ID.
-9. **UI Update:** Streamlit displays existing records and refreshes the health history after a new record is saved.
+1. **Patient Identification:** temporary patient ID (`001`).
+2. **Language Selection:** Hindi or Gujarati.
+3. **Voice Input:** record or upload audio (wav, mp3, m4a).
+4. **Speech-to-Text:** IndicConformer (or Whisper) creates the original transcript.
+5. **English Translation:** the language model translates the transcript.
+6. **Storage:** both transcripts are saved to SQLite. The request returns immediately.
+7. **Issue Extraction (background):** issues are extracted from the English text and stored with the exact supporting phrase. If the phrase is not found in the transcript the issue is flagged "please review". If extraction fails the record is still safe; use **Analyse pending records** in the Health Issues tab to retry.
+8. **UI:** *Translated Records* tab shows original + English text; *Health Issues* tab shows issue cards (live "Analysing..." while running).
 
 ### Planned Workflow
 
-The following features are planned for subsequent development:
-
-1. Health information extraction.
-2. Identification of symptoms, events, time expressions, and relevant context.
-3. Validation of extracted information.
-4. Chronological timeline generation.
-5. Structured appointment summary generation.
-6. Editable transcript and timeline review.
-7. Exporting summaries for medical appointments.
-8. Patient authentication and secure access control.
+1. Chronological timeline generation.
+2. Structured appointment summary generation.
+3. Editable transcript and timeline review.
+4. Exporting summaries for medical appointments.
+5. Patient authentication and secure access control.
 
 ## 6. Project Structure
 
-The current project follows this directory structure:
-
 ```text
 CareTrace/
-│
 ├── backend/
-│   ├── __init__.py
-│   ├── main.py
-│   │
+│   ├── main.py                  # app, start-up (DB tables, model preload)
+│   ├── database.py              # SQLite connection + table creation
 │   ├── api/
-│   │   ├── __init__.py
-│   │   ├── routes.py
-│   │   └── record_routes.py
-│   │
-│   ├── schemas/
-│   │   ├── __init__.py
-│   │   ├── health.py
-│   │   └── health_records.py
-│   │
+│   │   ├── routes.py            # /health, /transcribe
+│   │   ├── records_routes.py    # /records
+│   │   └── issues_routes.py     # /issues
+│   ├── schemas/                 # Pydantic models
 │   └── services/
-│       ├── transcription.py
+│       ├── transcription.py     # IndicConformer + Whisper
 │       ├── translation.py
-│       ├── health_records.py
-│       └── extraction.py
-│
+│       ├── extraction.py        # prompt + schema for issue extraction
+│       ├── issues.py            # store/read extracted issues
+│       ├── llm.py               # Hugging Face / Ollama client
+│       ├── status.py            # model status shown in the sidebar
+│       └── health_records.py
 ├── frontend/
-│   ├── app.py
-│   └── app_client.py
-│
-├── config/
-│   └── settings.py
-│
-├── data/
-│   └── caretrace.db
-│
-├── tests/
-│
-├── docs/
-│
+│   ├── app.py                   # Streamlit UI
+│   └── app_client.py            # HTTP calls to the backend
+├── config/settings.py           # all settings (read from environment variables)
+├── .streamlit/config.toml       # dark theme
+├── test/                        # pytest
+├── data/caretrace.db            # created automatically, not committed
 ├── requirements.txt
-├── .env
-├── .env.example
-├── .gitignore
 └── README.md
 ```
 
-**Note:** The `data/caretrace.db` file is generated automatically when the backend initializes the database. It does not need to be committed to GitHub.
-
-The structure above reflects the intended current organization. Keep filenames consistent with the actual files in your local repository.
-
 ## 7. Installation and Setup
 
-Follow these instructions to run CareTrace on a new Windows computer.
+Instructions for a new Windows computer.
 
 ### Prerequisites
 
-Install the following software:
+- Python 3.10+ and Git.
+- A Hugging Face account (free) - needed to download the speech model.
+- Optional: [Ollama](https://ollama.com/download) if you want fully local translation/extraction.
+- Plenty of RAM/disk: the speech and Whisper models are large downloads on first run.
 
-- Python 3.10 or a compatible version supported by the project's dependencies.
-- Git.
-- Visual Studio Code (recommended).
-- Ollama.
-
-Useful installation links:
-
-- [Python](https://www.python.org/downloads/)
-- [Git](https://git-scm.com/downloads)
-- [Visual Studio Code](https://code.visualstudio.com/)
-- [Ollama](https://ollama.com/download)
-
-### Step 1: Clone the Repository
-
-Open PowerShell or the VS Code terminal.
+### Step 1: Clone and enter the project
 
 ```powershell
-git clone <YOUR_GITHUB_REPOSITORY_URL>
-```
-
-Navigate to the project directory:
-
-```powershell
+git clone https://github.com/meet272002/CareTrace.git
 cd CareTrace
+git checkout flashy-ui-whisper-turbo    # until the pull request is merged into main
 ```
 
-Replace `<YOUR_GITHUB_REPOSITORY_URL>` with the actual repository URL.
-
-### Step 2: Create a Python Virtual Environment
+### Step 2: Virtual environment
 
 ```powershell
 python -m venv .venv
-```
-
-Activate the environment:
-
-```powershell
 .\.venv\Scripts\Activate.ps1
 ```
 
-If PowerShell blocks script execution, run:
+If PowerShell blocks scripts: `Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass`, then activate again.
 
-```powershell
-Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass
-```
-
-Then activate the environment again:
-
-```powershell
-.\.venv\Scripts\Activate.ps1
-```
-
-### Step 3: Install Dependencies
-
-Upgrade pip:
+### Step 3: Install dependencies
 
 ```powershell
 python -m pip install --upgrade pip
-```
-
-Install the project dependencies:
-
-```powershell
 pip install -r requirements.txt
 ```
 
-### Step 4: Install and Configure Ollama
+### Step 4: Speech model access (IndicConformer, one time)
 
-Install Ollama from:
+The model is gated on Hugging Face.
 
-https://ollama.com/download
+1. Open https://huggingface.co/ai4bharat/indic-conformer-600m-multilingual, log in and accept the terms.
+2. Run `hf auth login` and paste a token (create one at https://huggingface.co/settings/tokens).
+3. The first backend start downloads the model; later starts load it from disk.
 
-After installation, open a terminal and download the translation model:
+Without access the backend prints `[WARNING] IndicConformer failed...` and falls back to Whisper (weaker on Gujarati).
 
-```powershell
-ollama pull qwen2.5:3b
-```
+### Step 5: Choose the language model (translation + extraction)
 
-Check whether the model is available:
+| Option | When to use | Setup |
+|---|---|---|
+| **Hugging Face** (default when a token is found) | Fast, better quality, no local model | Needs Inference Providers credits (see warning below) |
+| **Ollama** (local) | Free, fully private, but slow on CPU | `ollama pull qwen2.5:3b`, then `$env:LLM_BACKEND="ollama"` |
 
-```powershell
-ollama list
-```
+**Hugging Face warning:** Inference Providers is a paid service. Free accounts get only about $0.10 of monthly credits, which runs out after a few calls; then every request fails with `HTTP 402`. Buy pre-paid credits or subscribe to PRO (about $9/month), or use Ollama. A new token on the same account does not help; credits belong to the account.
 
-Ensure the Ollama service is running.
+The backend uses the Hugging Face token from the `HF_TOKEN` environment variable, otherwise the one saved by `hf auth login`. If `HF_TOKEN` is set it wins over the saved login.
 
-The default local Ollama API address used by CareTrace is:
+**Privacy:** with Hugging Face the transcribed *text* (not the audio) is sent to a third-party service. Use Ollama if that is not acceptable.
 
-```text
-http://localhost:11434
-```
+### Step 6: Settings (environment variables)
 
-### Step 5: Configure Environment Variables
+`.env` files are **not** read by the code. Set variables in the PowerShell window where you start the backend, e.g. `$env:LLM_BACKEND="ollama"`. They last only for that window.
 
-If the project uses `.env.example`, create your local `.env` file:
+| Variable | Default | Meaning |
+|---|---|---|
+| `LLM_BACKEND` | `huggingface` if a token is found, else `ollama` | Language model for translation + extraction |
+| `HF_TOKEN` | saved `hf auth login` token | Hugging Face token (never commit it) |
+| `HF_MODEL` | `Qwen/Qwen3-32B` | Hosted chat model; can pin a provider, e.g. `openai/gpt-oss-120b:groq` |
+| `HF_TIMEOUT` | `120` | Seconds to wait for Hugging Face |
+| `OLLAMA_MODEL` | `qwen2.5:3b` | Local model (try `qwen2.5:7b` for quality) |
+| `ASR_BACKEND` | `indic_conformer` | Set `whisper` to force Whisper |
+| `INDIC_DECODER` | `ctc` | `rnnt` is the alternate decoder |
+| `WHISPER_MODEL` | `large-v3-turbo` | e.g. `small` for a faster, lighter Whisper |
+| `WHISPER_DEVICE` / `WHISPER_COMPUTE_TYPE` | `cpu` / `int8` | Use `cuda` / `float16` on a GPU |
+| `PRELOAD_BLOCKING` | `1` | `0` = start the API immediately and load models in the background |
 
-```powershell
-Copy-Item .env.example .env
-```
+### Step 7: Start the backend
 
-Update `.env` with any configuration required by the project.
-
-Do not commit `.env` to GitHub.
-
-### Step 6: Start the FastAPI Backend
-
-From the CareTrace project root, activate the virtual environment if necessary.
-
-Run:
-
-```powershell
-python -m uvicorn backend.main:app --reload
-```
-
-The backend should be available at:
-
-```text
-http://127.0.0.1:8000
-```
-
-FastAPI interactive API documentation:
-
-```text
-http://127.0.0.1:8000/docs
-```
-
-The backend initializes the SQLite database and creates the required table when the application starts.
-
-### Step 7: Start the Streamlit Frontend
-
-Open another terminal in VS Code.
-
-Navigate to the CareTrace project directory and activate the virtual environment:
+From the project root, with the environment active:
 
 ```powershell
-.\.venv\Scripts\Activate.ps1
+python -m uvicorn backend.main:app
 ```
 
-Run:
+Wait for `Models loaded. CareTrace backend is ready.` (the first start can take several minutes). Avoid `--reload` while testing audio: every file save restarts the server and reloads the models.
+
+API docs: http://127.0.0.1:8000/docs
+
+### Step 8: Start the frontend
+
+In a second terminal (activate the environment first):
 
 ```powershell
 streamlit run frontend/app.py
 ```
 
-The frontend should open at:
-
-```text
-http://localhost:8501
-```
-
-CareTrace is now ready to use.
+Open http://localhost:8501. The sidebar shows backend and model status.
 
 ## 8. API Endpoints
 
@@ -355,127 +260,88 @@ Retrieves all records associated with the temporary patient ID `001`, ordered by
 
 ## 9. Database Design
 
-The current prototype uses SQLite for persistent storage.
+SQLite file: `data/caretrace.db` (created automatically on backend start).
 
-Database location:
+### `health_records`
 
-```text
-data/caretrace.db
-```
-
-### Table: `health_records`
-
-| Column | Data Type | Description |
+| Column | Type | Description |
 |---|---|---|
-| `id` | INTEGER | Unique record identifier |
-| `patient_id` | TEXT | Patient identifier |
-| `original_transcript` | TEXT | Original Hindi/Gujarati transcript |
+| `id` | INTEGER | Record id |
+| `patient_id` | TEXT | Patient id (temporary `001`) |
+| `original_transcript` | TEXT | Hindi/Gujarati transcript |
 | `english_transcript` | TEXT | English translation |
-| `created_at` | TEXT | Record creation timestamp |
+| `created_at` | TEXT | When the record was saved |
 
-The database table is created automatically during backend startup.
+### `health_issues`
 
-For the current prototype, the patient ID is hardcoded as:
+One row per symptom/issue: `record_id`, `patient_id`, `name`, `status` (present / absent / unclear), `onset`, `duration`, `severity`, `pattern`, `evidence` (exact supporting phrase), `evidence_verified` (0/1).
+
+### `record_extractions`
+
+One row per record: `status` (`success` / `failed`), `error`, `additional_context`, `missing_information`, `extracted_at`.
+
+"When" a problem started is stored as the patient said it ("since yesterday", "for two days"), together with the record's save time. Phrases are not converted to calendar dates, to avoid guessing.
+
+The patient ID is hardcoded for the prototype:
 
 ```python
 PATIENT_ID = "001"
 ```
 
-This will be replaced with patient-specific authentication and access control in a future version.
+## 10. Running the Project - Quick Reference
 
-## 10. Running the Project — Quick Reference
+Two terminals, both in the project root with the environment activated.
 
-After completing the initial installation, two terminals are required.
-
-**Terminal 1 — Backend**
+**Terminal 1 - Backend** (wait for "CareTrace backend is ready")
 
 ```powershell
-cd CareTrace
-
 .\.venv\Scripts\Activate.ps1
-
-python -m uvicorn backend.main:app --reload
+# optional: $env:LLM_BACKEND="ollama"   or   $env:HF_TOKEN="hf_..."
+python -m uvicorn backend.main:app
 ```
 
-**Terminal 2 — Frontend**
+**Terminal 2 - Frontend**
 
 ```powershell
-cd CareTrace
-
 .\.venv\Scripts\Activate.ps1
-
 streamlit run frontend/app.py
 ```
 
-Make sure Ollama is running with the `qwen2.5:3b` model available.
+If you use Ollama, make sure it is running and `qwen2.5:3b` is pulled.
+
+Run the tests (mocked, no models needed): `python -m pytest test -q`
 
 ## 11. Troubleshooting
 
-### Issue 1: Backend connection error
+**Backend connection error / "Backend offline"** - the backend is still loading models (wait for the "ready" line) or not running. Check http://127.0.0.1:8000/api/v1/health.
 
-Ensure that FastAPI is running:
+**`ImportError: cannot import name 'get_patient_issues' from 'app_client'`** - your files are from different versions. Pull the whole branch (`git pull`) and restart both the backend and Streamlit.
 
-```text
-http://127.0.0.1:8000/health
-```
+**`git pull` says local changes would be overwritten** - `git stash`, `git pull`, `git stash pop`.
 
-Check that the frontend API base URL matches:
-
-```python
-API_BASE_URL = "http://127.0.0.1:8000/api/v1"
-```
-
-### Issue 2: Ollama connection error
-
-Check whether Ollama is running and the model is available:
+**Extraction failed: `HTTP 402` / "credits used up"** - the Hugging Face account has no Inference Providers credits (free accounts get only about $0.10 a month). Buy credits/PRO or switch to Ollama (`$env:LLM_BACKEND="ollama"`). A new token on the same account will not help. After fixing, open the Health Issues tab and click **Analyse pending records**. Test a token directly:
 
 ```powershell
-ollama list
+python -c "import requests; from config.settings import HF_TOKEN; r=requests.post('https://router.huggingface.co/v1/chat/completions', headers={'Authorization':'Bearer '+HF_TOKEN}, json={'model':'Qwen/Qwen3-32B','messages':[{'role':'user','content':'hi'}],'max_tokens':5}); print(HF_TOKEN[:7]+'...', r.status_code, r.text[:200])"
 ```
 
-If the model is missing:
+`200` means the token works. To use a different account: clear `HF_TOKEN` (`Remove-Item Env:HF_TOKEN`), run `hf auth login --force`, confirm with `hf auth whoami`, restart the backend.
 
-```powershell
-ollama pull qwen2.5:3b
-```
+**Extraction failed: `401` / `403` / `404` / `429`** - bad or missing token, token without Inference Providers permission, model not available (set another `HF_MODEL`), or rate limiting. The Health Issues tab shows the reason.
 
-### Issue 3: Whisper model loading takes time
+**Extraction failed: "Ollama ... timed out"** - the local model is too slow on CPU for extraction. Use Hugging Face (with credits) or a smaller/faster setup.
 
-The first transcription may take longer because the Whisper model needs to be downloaded and initialized.
+**`huggingface-cli` is deprecated** - use `hf auth login`.
 
-The current configuration uses:
+**`[WARNING] IndicConformer failed`** - you have not accepted the model terms or logged in (Step 4), or there is not enough memory. The backend falls back to Whisper meanwhile.
 
-- Model: `large-v3-turbo` (~800 MB download on first run)
-- Device: CPU (`WHISPER_DEVICE`)
-- Compute type: `int8` (`WHISPER_COMPUTE_TYPE`)
+**Transcript or translation is poor, especially Gujarati** - Whisper is weak on Gujarati; make sure IndicConformer loaded (sidebar: "Speech model: ready: IndicConformer"). For translation, a larger model helps.
 
-Change the model without touching code, e.g. `set WHISPER_MODEL=small` (PowerShell: `$env:WHISPER_MODEL="small"`) before starting the backend.
+**The first recording takes very long** - models were still loading. Start the backend and wait for "Models loaded" before recording.
 
-### Issue 4: Python module import errors
+**Python module import errors** - run commands from the project root with `python -m uvicorn backend.main:app`, with the virtual environment active.
 
-Ensure commands are executed from the CareTrace project root.
-
-Use:
-
-```powershell
-python -m uvicorn backend.main:app --reload
-```
-
-rather than executing the backend file directly.
-
-Also verify that the virtual environment is activated and all dependencies are installed.
-
-### Issue 5: Database records are not appearing
-
-Ensure the backend started successfully and the database initialization completed.
-
-Check that the database file exists:
-
-```text
-data/caretrace.db
-```
-
-Also verify that the patient ID used for saving and retrieving records is the same.
+**Records are not appearing** - check that the backend started and `data/caretrace.db` exists.
 
 ## 12. Evaluation Plan
 
@@ -504,6 +370,8 @@ The system should:
 - Protect recordings and health information from unauthorized access.
 - Avoid committing API keys, recordings, database files, or sensitive health information to version control.
 - Use fictional sample scenarios during early development.
+- Be aware that with the Hugging Face option the transcribed text is sent to a third-party service (audio stays local). Use Ollama for fully local processing.
+- Never commit tokens (`HF_TOKEN`) to Git.
 
 **Current prototype limitation:** Authentication and patient-level access control have not yet been implemented. The patient ID `001` is temporary, and the current database API must not be used to store real patient information in an exposed deployment.
 
@@ -516,14 +384,16 @@ The system should:
 | FastAPI backend | Implemented |
 | Hindi speech transcription | Implemented |
 | Gujarati speech transcription | Implemented |
-| English translation using Ollama | Implemented |
+| English translation (Hugging Face or Ollama) | Implemented |
 | SQLite database setup | Implemented |
 | Health record storage | Implemented |
 | Patient ID association | Implemented using temporary ID `001` |
 | Existing health history retrieval | Implemented |
 | Automatic UI refresh after saving | Implemented in current integration |
 | Patient registration and login | Not implemented |
-| Structured health information extraction | Experimental / pending integration |
+| Structured health issue extraction + Health Issues tab | Implemented (background task, evidence check) |
+| Flashy UI with 3 tabs | Implemented |
+| IndicConformer speech model with Whisper fallback | Implemented |
 | Chronological timeline generation | Planned |
 | Appointment summary generation | Planned |
 | User editing and validation | Planned |
@@ -554,32 +424,3 @@ Potential future improvements include:
 **Backend:** FastAPI  
 **Database:** SQLite  
 **Primary Goal:** Help users organize and communicate their reported health history more clearly.
-## Speech model setup (IndicConformer, recommended for Gujarati)
-
-Whisper is weak on Gujarati, so CareTrace now uses AI4Bharat IndicConformer by default and falls back to Whisper if it cannot load.
-
-1. Open https://huggingface.co/ai4bharat/indic-conformer-600m-multilingual, log in and accept the terms.
-2. `pip install -r requirements.txt` then `hf auth login` (paste a read token).
-3. Restart the backend. The first request downloads the model.
-
-Switches (environment variables): `ASR_BACKEND=whisper` to force Whisper, `INDIC_DECODER=rnnt` for the alternate decoder, `OLLAMA_MODEL=qwen2.5:7b` for a stronger translator (`ollama pull qwen2.5:7b`).
-
-
-## Health issue extraction
-
-After each recording is transcribed and translated, the English text is analysed (Ollama, JSON-schema constrained) and the issues are stored in `health_issues` / `record_extractions`. Each issue keeps what the patient said about **when** it started, how long it lasted, severity and pattern, plus the exact supporting phrase. If a phrase is not found in the transcript the issue is flagged for review. The record is always saved even if extraction fails; use **Analyse pending records** in the *Health Issues* tab to retry.
-
-The UI has three tabs: **Record**, **Translated Records** (original + English) and **Health Issues**.
-
-
-## Using Hugging Face instead of local Ollama
-
-Translation and issue extraction can run on Hugging Face Inference Providers (no local LLM needed):
-
-1. Create a token at https://huggingface.co/settings/tokens (enable permission to make calls to Inference Providers).
-2. Either run `hf auth login` once (the backend reuses that saved token, same one used for IndicConformer) or set it before starting the backend (PowerShell): `$env:HF_TOKEN="hf_..."` - never commit the token.
-3. Start the backend. With `HF_TOKEN` set it uses Hugging Face automatically; set `LLM_BACKEND=ollama` to go back to local Ollama.
-
-Optional: `HF_MODEL` (default `Qwen/Qwen3-32B`; you can pin a provider, e.g. `openai/gpt-oss-120b:groq`) and `HF_TIMEOUT`.
-
-**Privacy:** with Hugging Face the patient's *transcribed text* (not the audio) is sent to a third-party service. Speech recognition still runs on your machine. Use Ollama for fully local processing. Usage may count against your Hugging Face credits/quota.
