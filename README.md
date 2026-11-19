@@ -556,7 +556,7 @@ Potential future improvements include:
 Whisper is weak on Gujarati, so CareTrace now uses AI4Bharat IndicConformer by default and falls back to Whisper if it cannot load.
 
 1. Open https://huggingface.co/ai4bharat/indic-conformer-600m-multilingual, log in and accept the terms.
-2. `pip install -r requirements.txt` then `huggingface-cli login` (paste a read token).
+2. `pip install -r requirements.txt` then `hf auth login` (paste a read token).
 3. Restart the backend. The first request downloads the model.
 
 Switches (environment variables): `ASR_BACKEND=whisper` to force Whisper, `INDIC_DECODER=rnnt` for the alternate decoder, `OLLAMA_MODEL=qwen2.5:7b` for a stronger translator (`ollama pull qwen2.5:7b`).
