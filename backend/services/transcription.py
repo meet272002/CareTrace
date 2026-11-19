@@ -2,14 +2,20 @@
 from functools import lru_cache
 from faster_whisper import WhisperModel
 
+from config.settings import (
+    WHISPER_MODEL,
+    WHISPER_DEVICE,
+    WHISPER_COMPUTE_TYPE,
+)
+
 
 # ==========================================
-# MODEL CONFIGURATION
+# MODEL CONFIGURATION (see config/settings.py)
 # ==========================================
 
-MODEL_SIZE = "small"
-DEVICE = "cpu"
-COMPUTE_TYPE = "int8"
+MODEL_SIZE = WHISPER_MODEL          # default: "large-v3-turbo"
+DEVICE = WHISPER_DEVICE
+COMPUTE_TYPE = WHISPER_COMPUTE_TYPE
 
 SUPPORTED_LANGUAGES = {
     "hi": "Hindi",

@@ -14,7 +14,7 @@ python-dotenv
 pydantic
 
 # Model that we are using for transcription.
-faster-whisper
+faster-whisper>=1.1.0
 
 # Testing
 pytest

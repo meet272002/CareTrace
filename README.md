@@ -53,7 +53,7 @@ CareTrace aims to provide a simple voice-based interface that helps users record
 | Frontend | Streamlit |
 | Backend | FastAPI |
 | Speech Recognition | Faster-Whisper |
-| Whisper Model | `small` |
+| Whisper Model | `large-v3-turbo` (configurable via `WHISPER_MODEL`) |
 | Translation | Ollama |
 | Translation Model | `qwen2.5:3b` |
 | Database | SQLite |
@@ -442,9 +442,11 @@ The first transcription may take longer because the Whisper model needs to be do
 
 The current configuration uses:
 
-- Model: `small`
-- Device: CPU
-- Compute type: `int8`
+- Model: `large-v3-turbo` (~800 MB download on first run)
+- Device: CPU (`WHISPER_DEVICE`)
+- Compute type: `int8` (`WHISPER_COMPUTE_TYPE`)
+
+Change the model without touching code, e.g. `set WHISPER_MODEL=small` (PowerShell: `$env:WHISPER_MODEL="small"`) before starting the backend.
 
 ### Issue 4: Python module import errors
 
