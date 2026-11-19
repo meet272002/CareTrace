@@ -16,6 +16,13 @@ pydantic
 # Model that we are using for transcription.
 faster-whisper>=1.1.0
 
+# IndicConformer (Hindi/Gujarati ASR)
+torch
+torchaudio
+transformers
+onnx
+onnxruntime
+
 # Testing
 pytest
 httpx
