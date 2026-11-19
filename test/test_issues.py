@@ -75,3 +75,15 @@ def test_reextract_replaces_old_issues(client, monkeypatch):
 
 def test_unknown_record_404(client):
     assert client.post("/api/v1/issues/extract/999").status_code == 404
+
+
+def test_processing_flag_and_background_not_pending(client, monkeypatch):
+    from backend.services.issues import mark_processing, _in_progress
+    rec = save_health_record("001", "orig", TEXT)
+    mark_processing(rec["id"], "001")
+    try:
+        data = client.get("/api/v1/issues/001").json()
+        assert data["processing"] == 1 and data["pending_records"] == 0
+    finally:
+        _in_progress.clear()
+    assert client.get("/api/v1/issues/001").json()["pending_records"] == 1

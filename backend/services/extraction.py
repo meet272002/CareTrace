@@ -119,7 +119,10 @@ def extract_health_information(
                 "stream": False,
                 "options": {
                     "temperature": 0,
+                    # stop runaway generation with the constrained JSON schema
+                    "num_predict": 900,
                 },
+                "keep_alive": "30m",
             },
             timeout=OLLAMA_TIMEOUT,
         )

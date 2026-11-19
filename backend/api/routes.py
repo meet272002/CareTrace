@@ -1,12 +1,12 @@
 import os
 import tempfile
-from fastapi import APIRouter, File, HTTPException, UploadFile
+from fastapi import APIRouter, BackgroundTasks, File, HTTPException, UploadFile
 from typing import Literal
 
 from backend.services.transcription import transcribe_audio_file
 from backend.services.translation import translate_to_english
 from backend.services.health_records import save_health_record
-from backend.services.issues import extract_and_store
+from backend.services.issues import extract_and_store, mark_processing
 
 PATIENT_ID = "001"
 
@@ -28,6 +28,7 @@ Created by Meet Gandhi on 24/10/2026 for transcribing audio files in Gujarati an
 
 @router.post("/transcribe")
 async def transcribe_audio(
+    background_tasks: BackgroundTasks,
     language: Literal["hi", "gu"],
     audio: UploadFile = File(...)
 ):
@@ -81,12 +82,16 @@ async def transcribe_audio(
             english_transcript=english_transcript
         )
 
-        # Step 4: Extract issues (best effort - the record is already saved)
-        extraction_result = extract_and_store(
-            record_id=saved_record["id"],
-            patient_id=PATIENT_ID,
-            english_transcript=english_transcript
+        # Step 4: Extract issues in the background so the user is not kept
+        # waiting (the record is already saved either way).
+        mark_processing(saved_record["id"], PATIENT_ID)
+        background_tasks.add_task(
+            extract_and_store,
+            saved_record["id"],
+            PATIENT_ID,
+            english_transcript,
         )
+        extraction_result = {"status": "processing"}
 
         return {
             "status": "success",

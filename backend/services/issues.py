@@ -1,11 +1,17 @@
 import json
 import re
+import threading
 from typing import Dict, List
 
 from backend.database import get_db_connection
 from backend.schemas.health import HealthExtractionResponse
 from backend.services.extraction import extract_health_information
 
+
+
+# record_id -> patient_id for extractions currently running
+_in_progress: Dict[int, str] = {}
+_progress_lock = threading.Lock()
 
 
 def _contains(transcript: str, evidence: str) -> bool:
@@ -83,6 +89,8 @@ def extract_and_store(record_id: int, patient_id: str, english_transcript: str) 
     Run extraction on one translated record and store the result.
     Never raises: a failure is stored so the record itself is never lost.
     """
+    with _progress_lock:
+        _in_progress[record_id] = patient_id
     try:
         extraction = extract_health_information(english_transcript, "en")
         count = save_extraction(record_id, patient_id, english_transcript, extraction)
@@ -90,6 +98,20 @@ def extract_and_store(record_id: int, patient_id: str, english_transcript: str) 
     except Exception as error:  # noqa: BLE001
         save_extraction_failure(record_id, patient_id, str(error))
         return {"status": "failed", "issue_count": 0, "error": str(error)}
+    finally:
+        with _progress_lock:
+            _in_progress.pop(record_id, None)
+
+
+def mark_processing(record_id: int, patient_id: str) -> None:
+    """Flag a record as being analysed (called when the task is scheduled)."""
+    with _progress_lock:
+        _in_progress[record_id] = patient_id
+
+
+def _processing_ids(patient_id: str) -> set:
+    with _progress_lock:
+        return {rid for rid, pid in _in_progress.items() if pid == patient_id}
 
 
 def get_record(record_id: int):
@@ -104,7 +126,13 @@ def get_record(record_id: int):
 
 
 def get_unextracted_records(patient_id: str) -> List[dict]:
-    """Records that have no successful extraction yet (new, old, or failed)."""
+    """Records with no successful extraction yet (new, old or failed),
+    excluding ones being analysed right now."""
+    running = _processing_ids(patient_id)
+    return [r for r in _all_unextracted(patient_id) if r["id"] not in running]
+
+
+def _all_unextracted(patient_id: str) -> List[dict]:
     connection = get_db_connection()
     try:
         rows = connection.execute(
@@ -155,4 +183,5 @@ def get_patient_issues(patient_id: str) -> Dict:
         "issues": [dict(i, evidence_verified=bool(i["evidence_verified"])) for i in issues],
         "extractions": context,
         "pending_records": len(get_unextracted_records(patient_id)),
+        "processing": len(_processing_ids(patient_id)),
     }
