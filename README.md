@@ -55,7 +55,7 @@ CareTrace aims to provide a simple voice-based interface that helps users record
 | Backend | FastAPI |
 | Speech Recognition (default) | AI4Bharat **IndicConformer 600M** (Hindi/Gujarati), via Hugging Face `transformers` |
 | Speech Recognition (fallback) | Faster-Whisper `large-v3-turbo` |
-| Translation + issue extraction | Hugging Face Inference Providers (`Qwen/Qwen3-32B`) **or** local Ollama (`qwen2.5:3b`) - selectable |
+| Translation + issue extraction | Local Ollama (`qwen2.5:3b`, default) **or** Hugging Face Inference Providers (`Qwen/Qwen3-32B`, optional, paid) |
 | Database | SQLite |
 | Data Validation | Pydantic |
 | HTTP Communication | Requests |
@@ -170,12 +170,12 @@ Without access the backend prints `[WARNING] IndicConformer failed...` and falls
 
 | Option | When to use | Setup |
 |---|---|---|
-| **Hugging Face** (default when a token is found) | Fast, better quality, no local model | Needs Inference Providers credits (see warning below) |
-| **Ollama** (local) | Free, fully private, but slow on CPU | `ollama pull qwen2.5:3b`, then `$env:LLM_BACKEND="ollama"` |
+| **Ollama** (local, **default**) | Free and fully private, but slow on CPU | `ollama pull qwen2.5:3b` and keep Ollama running |
+| **Hugging Face** (optional) | Fast, better quality, no local model | `$env:LLM_BACKEND="huggingface"` plus a token with Inference Providers credits (see warning below) |
 
 **Hugging Face warning:** Inference Providers is a paid service. Free accounts get only about $0.10 of monthly credits, which runs out after a few calls; then every request fails with `HTTP 402`. Buy pre-paid credits or subscribe to PRO (about $9/month), or use Ollama. A new token on the same account does not help; credits belong to the account.
 
-The backend uses the Hugging Face token from the `HF_TOKEN` environment variable, otherwise the one saved by `hf auth login`. If `HF_TOKEN` is set it wins over the saved login.
+When `LLM_BACKEND=huggingface`, the backend uses the token from the `HF_TOKEN` environment variable, otherwise the one saved by `hf auth login`. If `HF_TOKEN` is set it wins over the saved login. Downloading the speech model from the Hub is free and unrelated to these paid credits.
 
 **Privacy:** with Hugging Face the transcribed *text* (not the audio) is sent to a third-party service. Use Ollama if that is not acceptable.
 
@@ -185,7 +185,7 @@ The backend uses the Hugging Face token from the `HF_TOKEN` environment variable
 
 | Variable | Default | Meaning |
 |---|---|---|
-| `LLM_BACKEND` | `huggingface` if a token is found, else `ollama` | Language model for translation + extraction |
+| `LLM_BACKEND` | `ollama` | `ollama` (local) or `huggingface` (hosted, paid credits) |
 | `HF_TOKEN` | saved `hf auth login` token | Hugging Face token (never commit it) |
 | `HF_MODEL` | `Qwen/Qwen3-32B` | Hosted chat model; can pin a provider, e.g. `openai/gpt-oss-120b:groq` |
 | `HF_TIMEOUT` | `120` | Seconds to wait for Hugging Face |
@@ -296,7 +296,7 @@ Two terminals, both in the project root with the environment activated.
 
 ```powershell
 .\.venv\Scripts\Activate.ps1
-# optional: $env:LLM_BACKEND="ollama"   or   $env:HF_TOKEN="hf_..."
+# optional, hosted model: $env:LLM_BACKEND="huggingface"; $env:HF_TOKEN="hf_..."
 python -m uvicorn backend.main:app
 ```
 
@@ -319,7 +319,7 @@ Run the tests (mocked, no models needed): `python -m pytest test -q`
 
 **`git pull` says local changes would be overwritten** - `git stash`, `git pull`, `git stash pop`.
 
-**Extraction failed: `HTTP 402` / "credits used up"** - the Hugging Face account has no Inference Providers credits (free accounts get only about $0.10 a month). Buy credits/PRO or switch to Ollama (`$env:LLM_BACKEND="ollama"`). A new token on the same account will not help. After fixing, open the Health Issues tab and click **Analyse pending records**. Test a token directly:
+**Extraction failed: `HTTP 402` / "credits used up"** - the Hugging Face account has no Inference Providers credits (free accounts get only about $0.10 a month). Buy credits/PRO or switch back to Ollama (the default; remove `LLM_BACKEND=huggingface`). A new token on the same account will not help. After fixing, open the Health Issues tab and click **Analyse pending records**. Test a token directly:
 
 ```powershell
 python -c "import requests; from config.settings import HF_TOKEN; r=requests.post('https://router.huggingface.co/v1/chat/completions', headers={'Authorization':'Bearer '+HF_TOKEN}, json={'model':'Qwen/Qwen3-32B','messages':[{'role':'user','content':'hi'}],'max_tokens':5}); print(HF_TOKEN[:7]+'...', r.status_code, r.text[:200])"
